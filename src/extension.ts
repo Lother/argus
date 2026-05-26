@@ -3,9 +3,11 @@ import * as vscode from 'vscode';
 import { DiscoveryService } from './services/discoveryService';
 import { ParserService } from './services/parserService';
 import { AnalyzerService } from './services/analyzerService';
+import { AggregationService } from './services/aggregationService';
 import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderReact';
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
+import { WorkspaceDashboardProvider } from './providers/workspaceDashboardProvider';
 import { FilterState, DEFAULT_FILTER_STATE, GroupMode, DatePreset, SessionSummary } from './types/models';
 import { getClaudeConfigDir } from './utils/claudePaths';
 
@@ -14,6 +16,7 @@ export function activate(context: vscode.ExtensionContext) {
   const discoveryService = new DiscoveryService();
   const parserService = new ParserService();
   const analyzerService = new AnalyzerService();
+  const aggregationService = new AggregationService(discoveryService);
 
   // Initialize providers
   const webviewProvider = new SessionWebviewProviderReact(
@@ -271,6 +274,14 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('argus.setGroupNone', () => setGroupMode('none')),
     vscode.commands.registerCommand('argus.setGroupProject', () => setGroupMode('project')),
     vscode.commands.registerCommand('argus.setGroupModel', () => setGroupMode('model'))
+  );
+
+  // Workspace Dashboard — cross-session token + cost rollups across the
+  // user's whole ~/.claude/projects/ tree. Opens as a singleton webview panel.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('argus.openWorkspaceDashboard', () => {
+      void WorkspaceDashboardProvider.show(context, aggregationService);
+    })
   );
 
   // Initial discovery — fire and forget; ensureSessions dedupes against the

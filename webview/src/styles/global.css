@@ -107,3 +107,229 @@ code, pre {
 .fade-in {
   animation: fadeIn 0.2s ease-out;
 }
+/* ─── Workspace Dashboard ───────────────────────────────────────────── */
+
+.ws-root {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--text);
+  padding: 16px 22px;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.ws-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ws-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ws-title-main {
+  font-size: 18px;
+  font-weight: 700;
+}
+.ws-title-sep {
+  color: var(--text-dim);
+}
+.ws-title-sub {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.ws-window {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ws-window-btn,
+.ws-refresh {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.ws-window-btn:hover,
+.ws-refresh:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.ws-window-btn.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+.ws-refresh {
+  font-size: 14px;
+  padding: 3px 8px;
+}
+
+.ws-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.ws-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.ws-tab:hover {
+  color: var(--text);
+}
+.ws-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--vscode-button-background);
+}
+
+.ws-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.ws-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--vscode-button-background);
+  border-radius: 50%;
+  animation: ws-spin 0.8s linear infinite;
+}
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+
+.ws-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ws-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.ws-stat {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+.ws-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.ws-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-bright);
+}
+
+.ws-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .ws-row { grid-template-columns: 1fr; }
+}
+
+.ws-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
+}
+.ws-card h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+}
+
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ws-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ws-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+}
+.ws-table td:first-child,
+.ws-table th:first-child {
+  font-family: 'Inter', sans-serif;
+}
+.ws-table .num {
+  text-align: right;
+}
+.ws-table tr:last-child td {
+  border-bottom: none;
+}
+.ws-table tr:hover td {
+  background: var(--bg-hover);
+}
+
+.ws-projectsort {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ws-sortbtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11.5px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.ws-sortbtn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.ws-sortbtn.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
