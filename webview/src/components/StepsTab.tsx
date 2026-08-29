@@ -326,7 +326,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     }
     const map = new Map<number, Finding[]>();
     findings.forEach(f => {
-      f.affectedSteps?.forEach(idx => {
+      f.steps?.forEach(idx => {
         const gi = mainByIndex.get(idx);
         if (gi === undefined) return;
         if (!map.has(gi)) map.set(gi, []);

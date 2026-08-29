@@ -120,7 +120,8 @@ export interface Finding {
   title: string;
   description: string;
   wastedCost?: number;
-  affectedSteps?: number[];
+  /** Local step indices within the session/agent the finding belongs to (matches host Finding.steps). */
+  steps?: number[];
 }
 
 export type ViewMode = 'overview' | 'steps' | 'findings' | 'files' | 'subagents' | 'cost' | 'context';

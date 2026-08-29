@@ -41,10 +41,10 @@ const renderFinding = (
         {t('analysis.wasted', { cost: finding.wastedCost.toFixed(4) })}
       </div>
     )}
-    {finding.affectedSteps && finding.affectedSteps.length > 0 && (
+    {finding.steps && finding.steps.length > 0 && (
       <div className="finding-steps">
         <span>{t('analysis.affectedSteps')}</span>
-        {finding.affectedSteps.map(idx => {
+        {finding.steps.map(idx => {
           const gi = resolveStep(idx);
           if (gi === undefined) {
             return <span key={idx} className="step-link disabled">#{idx}</span>;

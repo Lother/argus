@@ -60,7 +60,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         ),
         description: t('insights.retryLoopDesc'),
         potentialSavings: totalWasted,
-        affectedSteps: retryLoops.flatMap(f => f.affectedSteps || []),
+        affectedSteps: retryLoops.flatMap(f => f.steps || []),
       });
     }
 
@@ -72,7 +72,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         icon: '⚠️',
         title: t('insights.contextPressureTitle'),
         description: t('insights.contextPressureDesc'),
-        affectedSteps: pressureFindings.flatMap(f => f.affectedSteps || []),
+        affectedSteps: pressureFindings.flatMap(f => f.steps || []),
       });
     }
 
@@ -96,7 +96,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
               : t('insights.compactionDetailClean'),
         }),
         potentialSavings: totalWasted,
-        affectedSteps: compactionFindings.flatMap(f => f.affectedSteps || []),
+        affectedSteps: compactionFindings.flatMap(f => f.steps || []),
       });
     }
 
