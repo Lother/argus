@@ -349,8 +349,14 @@ export class SessionWebviewProviderReact {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(webviewPath, 'assets', 'main.js'))
     );
+    const globalScriptUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(webviewPath, 'assets', 'global.js'))
+    );
     const styleUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(webviewPath, 'assets', 'main.css'))
+    );
+    const globalStyleUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(webviewPath, 'assets', 'global.css'))
     );
 
     const locale = getLocale();
@@ -360,12 +366,14 @@ export class SessionWebviewProviderReact {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; font-src ${webview.cspSource} https:; img-src ${webview.cspSource} https:;">
+    <link rel="stylesheet" href="${globalStyleUri}">
     <link rel="stylesheet" href="${styleUri}">
+    <link rel="modulepreload" href="${globalScriptUri}">
     <title>Argus Session Viewer</title>
   </head>
   <body>
     <div id="root"></div>
-    <script src="${scriptUri}"></script>
+    <script type="module" src="${scriptUri}"></script>
   </body>
 </html>`;
   }

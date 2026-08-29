@@ -176,6 +176,12 @@
         "command": "argus.setGroupModel",
         "title": "%command.setGroupModel.title%",
         "category": "Argus"
+      },
+      {
+        "command": "argus.openWorkspaceDashboard",
+        "title": "Open Workspace Dashboard",
+        "icon": "$(dashboard)",
+        "category": "Argus"
       }
     ],
     "submenus": [
@@ -196,6 +202,11 @@
           "command": "argus.clearFilters",
           "when": "view == argusSessionList && argus.hasActiveFilters",
           "group": "navigation@2"
+        },
+        {
+          "command": "argus.openWorkspaceDashboard",
+          "when": "view == argusSessionList",
+          "group": "navigation@0"
         },
         {
           "command": "argus.refreshSessions",

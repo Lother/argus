@@ -11,6 +11,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'webview/index.html'),
+        workspace: resolve(__dirname, 'webview/workspace.html'),
       },
       output: {
         entryFileNames: 'assets/[name].js',
