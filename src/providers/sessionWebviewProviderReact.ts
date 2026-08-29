@@ -252,42 +252,6 @@ export class SessionWebviewProviderReact {
     return location === 'beside' ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active;
   }
 
-  async openDashboard(): Promise<void> {
-    const panel = vscode.window.createWebviewPanel(
-      'argusDashboard',
-      'Argus Dashboard',
-      this.getViewColumn(),
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-      }
-    );
-
-    const sessions = await this.discoveryService.getSessionList();
-
-    panel.webview.html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body {
-              font-family: var(--vscode-font-family);
-              color: var(--vscode-foreground);
-              background: var(--vscode-editor-background);
-              padding: 20px;
-            }
-            h1 { color: var(--vscode-foreground); }
-          </style>
-        </head>
-        <body>
-          <h1>📊 Argus Dashboard</h1>
-          <p>${sessions.length} sessions found</p>
-        </body>
-      </html>
-    `;
-  }
-
   private startWatching(sessionId: string, panel: vscode.WebviewPanel): void {
     const sessionInfo = this.discoveryService.getSessionFilePath(sessionId);
     if (!sessionInfo) {
