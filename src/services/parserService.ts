@@ -489,6 +489,9 @@ export class ParserService {
   private calculateCost(usage: any, model: string): number {
     // Import from models.ts would be better, but for simplicity:
     const pricing: any = {
+      'claude-fable-5': { in: 10, out: 50 },
+      'claude-opus-5': { in: 5, out: 25 },
+      'claude-sonnet-5': { in: 2, out: 10 },
       'claude-opus-4-6': { in: 15, out: 75 },
       'claude-sonnet-4-5-20250929': { in: 3, out: 15 },
       'claude-sonnet-4-6': { in: 3, out: 15 },

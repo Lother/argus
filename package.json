@@ -113,6 +113,11 @@
         "category": "Argus"
       },
       {
+        "command": "argus.toggleModelFable",
+        "title": "%command.toggleModelFable.title%",
+        "category": "Argus"
+      },
+      {
         "command": "argus.toggleModelOpus",
         "title": "%command.toggleModelOpus.title%",
         "category": "Argus"

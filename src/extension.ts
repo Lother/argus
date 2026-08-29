@@ -31,6 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
   // --- Filtering logic ---
 
   function normalizeModel(model: string): string {
+    if (model.includes('fable')) return 'fable';
     if (model.includes('opus')) return 'opus';
     if (model.includes('sonnet')) return 'sonnet';
     if (model.includes('haiku')) return 'haiku';
@@ -112,6 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   function syncContextKeys() {
     const models = filterState.selectedModels;
+    vscode.commands.executeCommand('setContext', 'argus.filter.fable', models.includes('fable'));
     vscode.commands.executeCommand('setContext', 'argus.filter.opus', models.includes('opus'));
     vscode.commands.executeCommand('setContext', 'argus.filter.sonnet', models.includes('sonnet'));
     vscode.commands.executeCommand('setContext', 'argus.filter.haiku', models.includes('haiku'));
@@ -240,6 +242,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Model toggles
   context.subscriptions.push(
+    vscode.commands.registerCommand('argus.toggleModelFable', () => toggleModel('fable')),
     vscode.commands.registerCommand('argus.toggleModelOpus', () => toggleModel('opus')),
     vscode.commands.registerCommand('argus.toggleModelSonnet', () => toggleModel('sonnet')),
     vscode.commands.registerCommand('argus.toggleModelHaiku', () => toggleModel('haiku'))

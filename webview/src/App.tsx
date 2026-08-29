@@ -91,6 +91,7 @@ function App() {
 
   const formatModel = (model: string): string => {
     if (!model) return '';
+    if (model.includes('fable')) return 'Fable';
     if (model.includes('opus')) return 'Opus';
     if (model.includes('sonnet')) return 'Sonnet';
     if (model.includes('haiku')) return 'Haiku';

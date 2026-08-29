@@ -213,6 +213,24 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICES: Record<string, ModelPricing> = {
+  'claude-fable-5': {
+    inputPerMillion: 10.0,
+    outputPerMillion: 50.0,
+    cacheReadRatio: 0.10,
+    cacheCreateRatio: 0.25,
+  },
+  'claude-opus-5': {
+    inputPerMillion: 5.0,
+    outputPerMillion: 25.0,
+    cacheReadRatio: 0.10,
+    cacheCreateRatio: 0.25,
+  },
+  'claude-sonnet-5': {
+    inputPerMillion: 2.0,
+    outputPerMillion: 10.0,
+    cacheReadRatio: 0.10,
+    cacheCreateRatio: 0.25,
+  },
   'claude-opus-4-6': {
     inputPerMillion: 15.0,
     outputPerMillion: 75.0,

@@ -593,6 +593,10 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
             <span class="dropdown-item-label">${t('sidebar.allModels')}</span>
           </button>
           <div class="dropdown-separator"></div>
+          <button class="dropdown-item" data-value="fable">
+            <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+            <span class="dropdown-item-label">Fable</span>
+          </button>
           <button class="dropdown-item" data-value="opus">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
             <span class="dropdown-item-label">Opus</span>
@@ -741,7 +745,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       item.addEventListener('click', () => {
         const val = item.dataset.value;
         selectedModel = val;
-        const labels = { '': I18N.all, 'opus': 'Opus', 'sonnet': 'Sonnet', 'haiku': 'Haiku' };
+        const labels = { '': I18N.all, 'fable': 'Fable', 'opus': 'Opus', 'sonnet': 'Sonnet', 'haiku': 'Haiku' };
         modelLabel.textContent = labels[val] || I18N.all;
         trigger.classList.toggle('has-value', val !== '');
 
@@ -1035,6 +1039,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     }
 
     function formatModel(model) {
+      if (model.includes('fable')) return 'Fable';
       if (model.includes('opus')) return 'Opus';
       if (model.includes('sonnet')) return 'Sonnet';
       if (model.includes('haiku')) return 'Haiku';
@@ -1047,6 +1052,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     }
 
     function normalizeModel(model) {
+      if (model.includes('fable')) return 'fable';
       if (model.includes('opus')) return 'opus';
       if (model.includes('sonnet')) return 'sonnet';
       if (model.includes('haiku')) return 'haiku';
@@ -1061,6 +1067,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     function getGroupLabel(key) {
       if (filterState.groupMode === 'model') {
+        if (key === 'fable') return 'Claude Fable';
         if (key === 'opus') return 'Claude Opus';
         if (key === 'sonnet') return 'Claude Sonnet';
         if (key === 'haiku') return 'Claude Haiku';

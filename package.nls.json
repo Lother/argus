@@ -6,6 +6,7 @@
   "command.openSessionDetail.title": "Open Session Detail",
   "command.openSessionTab.title": "Open Session Tab",
   "command.clearFilters.title": "Clear All Filters",
+  "command.toggleModelFable.title": "Toggle Fable Filter",
   "command.toggleModelOpus.title": "Toggle Opus Filter",
   "command.toggleModelSonnet.title": "Toggle Sonnet Filter",
   "command.toggleModelHaiku.title": "Toggle Haiku Filter",

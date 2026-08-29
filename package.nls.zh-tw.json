@@ -6,6 +6,7 @@
   "command.openSessionDetail.title": "開啟工作階段詳情",
   "command.openSessionTab.title": "開啟工作階段分頁",
   "command.clearFilters.title": "清除所有篩選",
+  "command.toggleModelFable.title": "切換 Fable 篩選",
   "command.toggleModelOpus.title": "切換 Opus 篩選",
   "command.toggleModelSonnet.title": "切換 Sonnet 篩選",
   "command.toggleModelHaiku.title": "切換 Haiku 篩選",
