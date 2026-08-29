@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { SessionSummary, FilterState } from '../types/models';
+import { t } from '../i18n/vscode';
 
 export class SessionListViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'argusSessionList';
@@ -573,7 +574,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
           <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
         </svg>
       </span>
-      <input type="text" id="search" placeholder="Search sessions..." spellcheck="false">
+      <input type="text" id="search" placeholder="${t('sidebar.searchPlaceholder')}" spellcheck="false">
       <button class="clear-btn" id="clearBtn">&times;</button>
       <span class="divider"></span>
       <div class="dropdown" id="modelDropdown">
@@ -581,7 +582,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
           <svg class="dropdown-trigger-icon" viewBox="0 0 16 16" fill="currentColor">
             <path d="M6 12v-1h4v1H6zM4 8v-1h8v1H4zM2 4v-1h12v1H2z"/>
           </svg>
-          <span class="dropdown-trigger-label" id="modelLabel">All</span>
+          <span class="dropdown-trigger-label" id="modelLabel">${t('sidebar.all')}</span>
           <svg class="dropdown-trigger-chevron" viewBox="0 0 16 16" fill="currentColor">
             <path d="M7.976 10.072l4.357-4.357.619.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"/>
           </svg>
@@ -589,7 +590,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         <div class="dropdown-menu" id="modelMenu">
           <button class="dropdown-item selected" data-value="">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">All Models</span>
+            <span class="dropdown-item-label">${t('sidebar.allModels')}</span>
           </button>
           <div class="dropdown-separator"></div>
           <button class="dropdown-item" data-value="opus">
@@ -614,7 +615,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
             <path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>
             <circle cx="18" cy="18" r="3"/><path d="m22 22-1.5-1.5"/>
           </svg>
-          <span class="dropdown-trigger-label" id="dateLabel">All</span>
+          <span class="dropdown-trigger-label" id="dateLabel">${t('sidebar.all')}</span>
           <svg class="dropdown-trigger-chevron" viewBox="0 0 16 16" fill="currentColor">
             <path d="M7.976 10.072l4.357-4.357.619.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"/>
           </svg>
@@ -622,41 +623,41 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         <div class="dropdown-menu" id="dateMenu">
           <button class="dropdown-item selected" data-value="all">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">All Time</span>
+            <span class="dropdown-item-label">${t('sidebar.allTime')}</span>
           </button>
           <div class="dropdown-separator"></div>
           <button class="dropdown-item" data-value="1h">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Last 1 hour</span>
+            <span class="dropdown-item-label">${t('sidebar.last1Hour')}</span>
             <span class="dropdown-item-shortcut">1h</span>
           </button>
           <button class="dropdown-item" data-value="24h">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Last 24 hours</span>
+            <span class="dropdown-item-label">${t('sidebar.last24Hours')}</span>
             <span class="dropdown-item-shortcut">24h</span>
           </button>
           <button class="dropdown-item" data-value="7d">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Last 7 days</span>
+            <span class="dropdown-item-label">${t('sidebar.last7Days')}</span>
             <span class="dropdown-item-shortcut">7d</span>
           </button>
           <button class="dropdown-item" data-value="30d">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Last 30 days</span>
+            <span class="dropdown-item-label">${t('sidebar.last30Days')}</span>
             <span class="dropdown-item-shortcut">30d</span>
           </button>
           <div class="dropdown-separator"></div>
           <button class="dropdown-item" data-value="custom" id="dateCustomToggle">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Custom range...</span>
+            <span class="dropdown-item-label">${t('sidebar.customRangeItem')}</span>
           </button>
           <div class="cal-area" id="calArea">
             <div class="cal-sep"></div>
             <div class="cal-wrap">
               <div class="cal-range-display">
-                <div class="cal-range-pill active" id="calFromPill">From</div>
+                <div class="cal-range-pill active" id="calFromPill">${t('datePicker.from')}</div>
                 <svg class="cal-range-arrow" width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/></svg>
-                <div class="cal-range-pill" id="calToPill">To</div>
+                <div class="cal-range-pill" id="calToPill">${t('datePicker.to')}</div>
               </div>
               <div class="cal-header">
                 <button class="cal-nav" id="calPrev">
@@ -670,8 +671,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
               <div class="cal-weekdays" id="calWeekdays"></div>
               <div class="cal-days" id="calDays"></div>
               <div class="cal-actions">
-                <button class="cal-btn secondary" id="calCancel">Cancel</button>
-                <button class="cal-btn primary" id="calApply" disabled>Apply</button>
+                <button class="cal-btn secondary" id="calCancel">${t('datePicker.cancel')}</button>
+                <button class="cal-btn primary" id="calApply" disabled>${t('datePicker.apply')}</button>
               </div>
             </div>
           </div>
@@ -688,6 +689,31 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const listEl = document.getElementById('list');
     const LIVE_ICON = '${liveIconUri}';
     const SESSION_ICON = '${sessionIconUri}';
+    const I18N = ${JSON.stringify({
+      all: t('sidebar.all'),
+      custom: t('sidebar.custom'),
+      unknownProject: t('sidebar.unknownProject'),
+      noSessionsFound: t('sidebar.noSessionsFound'),
+      untitledSession: t('sidebar.untitledSession'),
+      from: t('datePicker.from'),
+      to: t('datePicker.to'),
+      months: t('sidebar.months'),
+      weekdays: t('sidebar.weekdays'),
+      calendarTitleFormat: t('sidebar.calendarTitleFormat'),
+      pillDateFormat: t('sidebar.pillDateFormat'),
+      justNow: t('sidebar.time.justNow'),
+      minutesAgo: t('sidebar.time.minutesAgo'),
+      hoursAgo: t('sidebar.time.hoursAgo'),
+      daysAgo: t('sidebar.time.daysAgo'),
+      weeksAgo: t('sidebar.time.weeksAgo'),
+      monthsAgo: t('sidebar.time.monthsAgo'),
+    })};
+
+    function i18nFormat(template, params) {
+      return template.replace(/\\{(\\w+)\\}/g, (m, name) =>
+        Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : m
+      );
+    }
 
     // Custom dropdown
     const dropdown = document.getElementById('modelDropdown');
@@ -715,8 +741,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       item.addEventListener('click', () => {
         const val = item.dataset.value;
         selectedModel = val;
-        const labels = { '': 'All', 'opus': 'Opus', 'sonnet': 'Sonnet', 'haiku': 'Haiku' };
-        modelLabel.textContent = labels[val] || 'All';
+        const labels = { '': I18N.all, 'opus': 'Opus', 'sonnet': 'Sonnet', 'haiku': 'Haiku' };
+        modelLabel.textContent = labels[val] || I18N.all;
         trigger.classList.toggle('has-value', val !== '');
 
         modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
@@ -752,8 +778,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     let calToDate = null;
     let calSelecting = 'from'; // 'from' or 'to'
 
-    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const WEEKDAYS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+    const MONTHS = I18N.months.split(',');
+    const WEEKDAYS = I18N.weekdays.split(',');
 
     function calInit() {
       calWeekdays.innerHTML = WEEKDAYS.map(d => '<div class="cal-wd">' + d + '</div>').join('');
@@ -768,7 +794,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     }
     function formatPill(d) {
       if (!d) return null;
-      return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+      return i18nFormat(I18N.pillDateFormat, { month: MONTHS[d.getMonth()], day: d.getDate(), year: d.getFullYear() });
     }
     function sameDay(a, b) {
       return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -778,7 +804,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     }
 
     function calRender() {
-      calTitle.textContent = MONTHS[calViewMonth] + ' ' + calViewYear;
+      calTitle.textContent = i18nFormat(I18N.calendarTitleFormat, { month: MONTHS[calViewMonth], year: calViewYear });
 
       // First day of month (shift to Monday-start)
       const first = new Date(calViewYear, calViewMonth, 1);
@@ -817,10 +843,10 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       calDays.innerHTML = html;
 
       // Update pills
-      calFromPill.textContent = formatPill(calFromDate) || 'From';
+      calFromPill.textContent = formatPill(calFromDate) || I18N.from;
       calFromPill.classList.toggle('has-date', !!calFromDate);
       calFromPill.classList.toggle('active', calSelecting === 'from');
-      calToPill.textContent = formatPill(calToDate) || 'To';
+      calToPill.textContent = formatPill(calToDate) || I18N.to;
       calToPill.classList.toggle('has-date', !!calToDate);
       calToPill.classList.toggle('active', calSelecting === 'to');
 
@@ -879,7 +905,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       calRender();
     });
 
-    const dateLabels = { 'all': 'All', '1h': '1h', '24h': '24h', '7d': '7d', '30d': '30d', 'custom': 'Custom' };
+    const dateLabels = { 'all': I18N.all, '1h': '1h', '24h': '24h', '7d': '7d', '30d': '30d', 'custom': I18N.custom };
 
     dateTrigger.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -896,7 +922,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       item.addEventListener('click', () => {
         const val = item.dataset.value;
         selectedDate = val;
-        dateLabel.textContent = dateLabels[val] || 'All';
+        dateLabel.textContent = dateLabels[val] || I18N.all;
         dateTrigger.classList.toggle('has-value', val !== 'all');
 
         dateMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
@@ -977,13 +1003,13 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         clearBtn.classList.remove('visible');
       } else if (msg.type === 'clearModelFilter') {
         selectedModel = '';
-        modelLabel.textContent = 'All';
+        modelLabel.textContent = I18N.all;
         trigger.classList.remove('has-value');
         modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
         modelMenu.querySelector('.dropdown-item[data-value=""]').classList.add('selected');
       } else if (msg.type === 'clearDateFilter') {
         selectedDate = 'all';
-        dateLabel.textContent = 'All';
+        dateLabel.textContent = I18N.all;
         dateTrigger.classList.remove('has-value');
         dateMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
         dateMenu.querySelector('.dropdown-item[data-value="all"]').classList.add('selected');
@@ -997,15 +1023,15 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     function relativeTime(isoStr) {
       const diff = Date.now() - new Date(isoStr).getTime();
       const sec = Math.floor(diff / 1000);
-      if (sec < 60) return 'just now';
+      if (sec < 60) return I18N.justNow;
       const min = Math.floor(sec / 60);
-      if (min < 60) return min + 'm ago';
+      if (min < 60) return i18nFormat(I18N.minutesAgo, { n: min });
       const hr = Math.floor(min / 60);
-      if (hr < 24) return hr + 'h ago';
+      if (hr < 24) return i18nFormat(I18N.hoursAgo, { n: hr });
       const days = Math.floor(hr / 24);
-      if (days < 7) return days + 'd ago';
-      if (days < 30) return Math.floor(days / 7) + 'w ago';
-      return Math.floor(days / 30) + 'mo ago';
+      if (days < 7) return i18nFormat(I18N.daysAgo, { n: days });
+      if (days < 30) return i18nFormat(I18N.weeksAgo, { n: Math.floor(days / 7) });
+      return i18nFormat(I18N.monthsAgo, { n: Math.floor(days / 30) });
     }
 
     function formatModel(model) {
@@ -1028,7 +1054,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     }
 
     function getGroupKey(s) {
-      if (filterState.groupMode === 'project') return s.project || 'Unknown Project';
+      if (filterState.groupMode === 'project') return s.project || I18N.unknownProject;
       if (filterState.groupMode === 'model') return normalizeModel(s.model);
       return '';
     }
@@ -1061,7 +1087,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       const cls = grouped ? 'session-item grouped' : 'session-item';
       return '<div class="' + cls + '" tabindex="0" data-id="' + s.sessionId + '">'
         + '<img class="session-icon" src="' + icon + '">'
-        + '<span class="session-label">' + escapeHtml(s.prompt || 'Untitled Session') + '</span>'
+        + '<span class="session-label">' + escapeHtml(s.prompt || I18N.untitledSession) + '</span>'
         + '<span class="session-desc">' + escapeHtml(desc) + '</span>'
         + '</div>';
     }
@@ -1072,7 +1098,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     function render() {
       if (!sessions.length) {
-        listEl.innerHTML = '<div class="empty">No sessions found</div>';
+        listEl.innerHTML = '<div class="empty">' + escapeHtml(I18N.noSessionsFound) + '</div>';
         return;
       }
 

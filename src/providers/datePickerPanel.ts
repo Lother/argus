@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { t, getLocale } from '../i18n/vscode';
 
 export class DatePickerPanel {
   static show(
@@ -7,7 +8,7 @@ export class DatePickerPanel {
   ): void {
     const panel = vscode.window.createWebviewPanel(
       'argusDatePicker',
-      'Select Date Range',
+      t('datePicker.panelTitle'),
       vscode.ViewColumn.Active,
       { enableScripts: true }
     );
@@ -30,9 +31,10 @@ export class DatePickerPanel {
 
   private static getHtml(): string {
     const today = new Date().toISOString().split('T')[0];
+    const htmlLang = getLocale() === 'zh-TW' ? 'zh-TW' : 'en';
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${htmlLang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -114,18 +116,18 @@ export class DatePickerPanel {
 </head>
 <body>
   <div class="container">
-    <h3>Custom Date Range</h3>
+    <h3>${t('datePicker.customDateRange')}</h3>
     <div class="field">
-      <label>From</label>
+      <label>${t('datePicker.from')}</label>
       <input type="date" id="fromDate" value="${today}">
     </div>
     <div class="field">
-      <label>To</label>
+      <label>${t('datePicker.to')}</label>
       <input type="date" id="toDate" value="${today}">
     </div>
     <div class="buttons">
-      <button class="btn-secondary" id="cancelBtn">Cancel</button>
-      <button class="btn-primary" id="applyBtn">Apply</button>
+      <button class="btn-secondary" id="cancelBtn">${t('datePicker.cancel')}</button>
+      <button class="btn-primary" id="applyBtn">${t('datePicker.apply')}</button>
     </div>
   </div>
   <script>

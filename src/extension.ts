@@ -201,7 +201,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.refreshSessions', async () => {
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Argus: Refreshing sessions...' },
+        { location: vscode.ProgressLocation.Notification, title: t('ext.refreshingSessions') },
         async () => {
           try {
             await discoveryService.refreshDiscovery();
@@ -309,7 +309,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Status bar item
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = '$(pulse) Argus';
-  statusBarItem.tooltip = 'Claude Code Session Debugger';
+  statusBarItem.tooltip = t('ext.statusBarTooltip');
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 }
