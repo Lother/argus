@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { t, getLocale } from '../i18n/vscode';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -73,7 +74,7 @@ export class SessionWebviewProviderReact {
     // Load session data
     const sessionData = await this.loadSessionData(sessionId);
     if (!sessionData) {
-      vscode.window.showErrorMessage('Failed to load session data');
+      vscode.window.showErrorMessage(t('ext.loadFailed'));
       return;
     }
 
@@ -720,19 +721,33 @@ export class SessionWebviewProviderReact {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(webviewPath, 'assets', 'main.css'))
     );
+    // With two Vite entries (session viewer + workspace dashboard) the shared
+    // code/styles are split into global.js / global.css, so the bundle must be
+    // loaded as an ES module and the shared stylesheet linked explicitly.
+    const globalScriptUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(webviewPath, 'assets', 'global.js'))
+    );
+    const globalStyleUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(webviewPath, 'assets', 'global.css'))
+    );
+    // The active locale travels on <html lang>; the webview CSP blocks inline
+    // scripts, so it cannot be injected as a window global.
+    const locale = getLocale();
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; font-src ${webview.cspSource} https:; img-src ${webview.cspSource} https: data:;">
+    <link rel="stylesheet" href="${globalStyleUri}">
     <link rel="stylesheet" href="${styleUri}">
+    <link rel="modulepreload" href="${globalScriptUri}">
     <title>Argus Session Viewer</title>
   </head>
   <body>
     <div id="root"></div>
-    <script src="${scriptUri}"></script>
+    <script type="module" src="${scriptUri}"></script>
   </body>
 </html>`;
   }

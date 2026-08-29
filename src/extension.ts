@@ -4,6 +4,9 @@ import { DiscoveryService } from './services/discoveryService';
 import { ParserService } from './services/parserService';
 import { AnalyzerService } from './services/analyzerService';
 import { SearchService } from './services/searchService';
+import { AggregationService } from './services/aggregationService';
+import { WorkspaceDashboardProvider } from './providers/workspaceDashboardProvider';
+import { t } from './i18n/vscode';
 import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderReact';
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
@@ -417,7 +420,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.refreshSessions', async () => {
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Argus: Refreshing sessions...' },
+        { location: vscode.ProgressLocation.Notification, title: t('ext.refreshingSessions') },
         async () => {
           try {
             await discoveryService.refreshDiscovery();
@@ -425,10 +428,10 @@ export function activate(context: vscode.ExtensionContext) {
             allSessions = discoveryService.getSessionSummaries();
             refreshList();
             await runContentSearch();
-            vscode.window.showInformationMessage(`Sessions refreshed (${allSessions.length} found)`);
+            vscode.window.showInformationMessage(t('ext.sessionsRefreshed', { count: allSessions.length }));
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage('Failed to refresh sessions: ' + msg);
+            vscode.window.showErrorMessage(t('ext.refreshFailed', { error: msg }));
           }
         }
       );
@@ -441,7 +444,7 @@ export function activate(context: vscode.ExtensionContext) {
         await webviewProvider.openSessionDetail(sessionId);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        vscode.window.showErrorMessage('Failed to open session: ' + msg);
+        vscode.window.showErrorMessage(t('ext.openFailed', { error: msg }));
       }
     })
   );
@@ -520,6 +523,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('argus.setGroupDate', () => setGroupMode('date'))
   );
 
+  // Workspace Dashboard — cross-session token + cost rollups across the
+  // user's whole ~/.claude/projects/ tree. Opens as a singleton webview panel.
+  const aggregationService = new AggregationService(discoveryService);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('argus.openWorkspaceDashboard', () => {
+      void WorkspaceDashboardProvider.show(context, aggregationService);
+    })
+  );
+
   // Initial discovery — fire and forget; ensureSessions dedupes against the
   // view-open path if the user clicks Argus before this finishes.
   void ensureSessions();
@@ -578,7 +590,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Status bar item
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = '$(pulse) Argus';
-  statusBarItem.tooltip = 'Claude Code Session Debugger';
+  statusBarItem.tooltip = t('ext.statusBarTooltip');
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 }

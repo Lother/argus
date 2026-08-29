@@ -81,126 +81,137 @@
       "argus": [
         {
           "id": "argusSessionList",
-          "name": "Sessions",
+          "name": "%view.sessions.name%",
           "type": "webview",
-          "contextualTitle": "Claude Code Sessions"
+          "contextualTitle": "%view.sessions.contextualTitle%"
         }
       ]
     },
     "commands": [
       {
         "command": "argus.refreshSessions",
-        "title": "Refresh Sessions",
+        "title": "%command.refreshSessions.title%",
         "icon": "$(refresh)",
         "category": "Argus"
       },
       {
         "command": "argus.openSessionDetail",
-        "title": "Open Session Detail",
+        "title": "%command.openSessionDetail.title%",
         "category": "Argus"
       },
       {
         "command": "argus.openSessionTab",
-        "title": "Open Session Tab",
+        "title": "%command.openSessionTab.title%",
         "category": "Argus"
       },
       {
         "command": "argus.toggleModelOpus",
-        "title": "Toggle Opus Filter",
+        "title": "%command.toggleModelOpus.title%",
         "category": "Argus"
       },
       {
         "command": "argus.toggleModelSonnet",
-        "title": "Toggle Sonnet Filter",
+        "title": "%command.toggleModelSonnet.title%",
         "category": "Argus"
       },
       {
         "command": "argus.toggleModelHaiku",
-        "title": "Toggle Haiku Filter",
+        "title": "%command.toggleModelHaiku.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDateAll",
-        "title": "All Time",
+        "title": "%command.setDateAll.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate1h",
-        "title": "Last 1 Hour",
+        "title": "%command.setDate1h.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate3h",
-        "title": "Last 3 Hours",
+        "title": "%command.setDate3h.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate6h",
-        "title": "Last 6 Hours",
+        "title": "%command.setDate6h.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate24h",
-        "title": "Last 24 Hours",
+        "title": "%command.setDate24h.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate7d",
-        "title": "Last 7 Days",
+        "title": "%command.setDate7d.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate30d",
-        "title": "Last 30 Days",
+        "title": "%command.setDate30d.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDateCustom",
-        "title": "Custom Range...",
+        "title": "%command.setDateCustom.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupNone",
-        "title": "Flat List",
+        "title": "%command.setGroupNone.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupProject",
-        "title": "Group by Project",
+        "title": "%command.setGroupProject.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupModel",
-        "title": "Group by Model",
+        "title": "%command.setGroupModel.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupDate",
-        "title": "Group by Date",
+        "title": "%command.setGroupDate.title%",
         "category": "Argus"
       },
       {
         "command": "argus.filterCurrentProjectOn",
-        "title": "Show Only Current Project",
+        "title": "%command.filterCurrentProjectOn.title%",
         "icon": "$(filter)",
         "category": "Argus"
       },
       {
         "command": "argus.filterCurrentProjectOff",
-        "title": "Show Sessions From All Projects",
+        "title": "%command.filterCurrentProjectOff.title%",
         "icon": "$(filter-filled)",
+        "category": "Argus"
+      },
+      {
+        "command": "argus.openWorkspaceDashboard",
+        "title": "%command.openWorkspaceDashboard.title%",
+        "icon": "$(dashboard)",
         "category": "Argus"
       }
     ],
     "submenus": [
       {
         "id": "argus.groupMenu",
-        "label": "Group Sessions",
+        "label": "%submenu.groupMenu.label%",
         "icon": "$(list-tree)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "argus.openWorkspaceDashboard",
+          "when": "view == argusSessionList",
+          "group": "navigation@0"
+        },
         {
           "command": "argus.filterCurrentProjectOn",
           "when": "view == argusSessionList && !argus.filter.currentProject",
@@ -247,16 +258,22 @@
         "argus.scanDepth": {
           "type": "number",
           "default": 5,
-          "description": "Maximum directory depth for scanning .claude directories"
+          "description": "%config.scanDepth.description%"
         },
         "argus.language": {
           "type": "string",
-          "default": "en",
+          "default": "auto",
           "enum": [
+            "auto",
             "en",
-            "tr"
+            "zh-TW"
           ],
-          "description": "Language for analysis findings"
+          "description": "%config.language.description%",
+          "enumDescriptions": [
+            "%config.language.auto%",
+            "English",
+            "繁體中文"
+          ]
         },
         "argus.openLocation": {
           "type": "string",
@@ -266,30 +283,30 @@
             "beside"
           ],
           "enumDescriptions": [
-            "Open the session as a tab in the currently active editor group",
-            "Open the session in an editor group next to the active one"
+            "%config.openLocation.enum.active%",
+            "%config.openLocation.enum.beside%"
           ],
-          "description": "Where a session opens when clicked in the Sessions view."
+          "description": "%config.openLocation.description%"
         },
         "argus.delete.useTrash": {
           "type": "boolean",
           "default": true,
-          "description": "Move deleted sessions to the system trash so they can be recovered. When the trash is unavailable, Argus asks before deleting permanently instead. Turn this off to delete sessions permanently right away, with a single confirmation."
+          "description": "%config.delete.useTrash.description%"
         },
         "argus.searchBar.showModelSelector": {
           "type": "boolean",
           "default": true,
-          "description": "Show the model selector next to the search box in the Sessions view. When turned off the selector is hidden and any active model filter is cleared."
+          "description": "%config.searchBar.showModelSelector.description%"
         },
         "argus.sessionList.showModel": {
           "type": "boolean",
           "default": true,
-          "description": "Show the model name in the subtitle of each session in the Sessions view."
+          "description": "%config.sessionList.showModel.description%"
         },
         "argus.sessionList.showProject": {
           "type": "boolean",
           "default": true,
-          "description": "Show the project name in the subtitle of each session in the Sessions view."
+          "description": "%config.sessionList.showProject.description%"
         },
         "argus.steps.sortOrder": {
           "type": "string",
@@ -301,12 +318,12 @@
             "cost-asc"
           ],
           "enumDescriptions": [
-            "Newest step first",
-            "Oldest step first",
-            "Most expensive step first",
-            "Cheapest step first"
+            "%config.steps.sortOrder.enum.newest%",
+            "%config.steps.sortOrder.enum.oldest%",
+            "%config.steps.sortOrder.enum.cost-desc%",
+            "%config.steps.sortOrder.enum.cost-asc%"
           ],
-          "description": "Default sort order for the Steps tab of a session. Applied when a session is opened; changing the sort inside a session is temporary."
+          "description": "%config.steps.sortOrder.description%"
         },
         "argus.steps.autoExpand": {
           "type": "array",
@@ -314,7 +331,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Step types that open expanded in the Steps tab, so their output is visible without clicking. Matched case-insensitively against the tool name (`Read`, `Bash`, `Edit`, …) or step type (`text`, `thinking`), with `*` as a wildcard: `*` expands everything, `mcp*` every MCP tool, `mcp_chromium*` one MCP server (repeated `_` are treated as one, so `mcp_chromium*` also matches `mcp__chromium__navigate`). Clicking a step still toggles it.",
+          "markdownDescription": "%config.steps.autoExpand.markdownDescription%",
           "examples": [
             [
               "text",
@@ -333,12 +350,12 @@
         "argus.notes.hideNotes": {
           "type": "boolean",
           "default": false,
-          "description": "Hide the floating Session Notes button in a session. Notes already saved are kept and reappear when this is turned off."
+          "description": "%config.notes.hideNotes.description%"
         },
         "argus.analysis.realCompactsOnly": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Report a `Context Compaction` finding in the Analysis tab only where the transcript actually marks one (`isCompactSummary`). By default the compaction is inferred from a drop in `input + cache_creation` tokens, which also fires on ordinary prompt-cache rotation — a step whose prompt was rewritten into the cache looks identical to a context reset. Enable for accuracy; leave off for transcripts written before Claude Code recorded the marker."
+          "markdownDescription": "%config.analysis.realCompactsOnly.markdownDescription%"
         }
       }
     }
