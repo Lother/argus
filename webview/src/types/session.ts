@@ -1,6 +1,11 @@
 export interface SessionDetail {
   sessionId: string;
   prompt: string;
+  /**
+   * Title Claude Code generated for the session. Absent for sessions it never
+   * titled, where `prompt` is all we have.
+   */
+  aiTitle?: string;
   project: string;
   model: string;
   startTime: Date;
@@ -15,16 +20,41 @@ export interface SessionDetail {
   analysis?: AnalysisResult;
 }
 
+/**
+ * A blob stored inline in the transcript — a pasted screenshot, an image a
+ * tool returned, any other base64 block. Only this description reaches the
+ * webview; the bytes are fetched from the host when a badge is opened.
+ */
+export interface Attachment {
+  /** Locator back into the transcript: `<event uuid>#<block path>`. */
+  id: string;
+  kind: 'image' | 'file';
+  mediaType: string;
+  /** Decoded size in bytes. */
+  size: number;
+  /** Suggested file name for saving/opening. */
+  name: string;
+}
+
 export interface Step {
   index: number;
   type: string;
+  attachments?: Attachment[];
+  // Identifies the API response a step came from; several steps share one.
+  messageId?: string;
   toolName?: string;
   toolInput?: any;
   toolResult?: string;
   toolSuccess?: boolean;
+  toolUseId?: string;
   content?: string;
   timestamp?: string;
+  // Charged once per API response: the first step of a message carries the
+  // whole cost, its siblings carry 0. Sum over steps = session total.
   cost: number;
+  // Cost came from fallback pricing because the model id was not recognised.
+  costIsEstimate?: boolean;
+  model?: string;
   usage?: TokenUsage;
   agentId?: string;
   globalIndex?: number;
@@ -35,6 +65,11 @@ export interface TokenUsage {
   output_tokens: number;
   cache_read_input_tokens: number;
   cache_creation_input_tokens: number;
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
+  speed?: string;
 }
 
 export interface Subagent {
@@ -43,7 +78,12 @@ export interface Subagent {
   model: string;
   agentType?: string;
   description?: string;
+  // Undefined for agents launched from the main session; otherwise
+  // `parentStepIndex` points into that parent agent's own step list.
+  parentAgentId?: string;
   parentStepIndex?: number;
+  toolUseId?: string;
+  spawnDepth?: number;
   startTime?: string;
   endTime?: string;
   durationMs?: number;
@@ -62,12 +102,13 @@ export interface Subagent {
  * stable `globalIndex` for cross-tab navigation.
  */
 export function flattenSessionSteps(session: SessionDetail): Step[] {
-  const spawnedAt = new Map<number, Subagent[]>();
+  const spawnedAt = new Map<string, Subagent[]>();
   for (const sub of session.subagents) {
     if (typeof sub.parentStepIndex === 'number') {
-      const arr = spawnedAt.get(sub.parentStepIndex) ?? [];
+      const k = spawnKey(sub.parentAgentId, sub.parentStepIndex);
+      const arr = spawnedAt.get(k) ?? [];
       arr.push(sub);
-      spawnedAt.set(sub.parentStepIndex, arr);
+      spawnedAt.set(k, arr);
     }
   }
 
@@ -76,20 +117,41 @@ export function flattenSessionSteps(session: SessionDetail): Step[] {
     out.push({ ...s, agentId: agentId ?? s.agentId, globalIndex: out.length });
   };
 
-  for (const main of session.steps) {
-    push(main);
-    const subs = spawnedAt.get(main.index);
-    if (!subs) continue;
-    for (const sub of subs) {
-      for (const sStep of sub.steps) push(sStep, sub.agentId);
+  // Recursive: an agent's steps can spawn further agents, each inlined right
+  // after its own Task step. `emitted` also guards against parent-link cycles.
+  const emitted = new Set<string>();
+  const emit = (steps: Step[], agentId?: string) => {
+    for (const s of steps) {
+      push(s, agentId);
+      const children = spawnedAt.get(spawnKey(agentId, s.index));
+      if (!children) continue;
+      for (const child of children) {
+        if (emitted.has(child.agentId)) continue;
+        emitted.add(child.agentId);
+        emit(child.steps, child.agentId);
+      }
     }
+  };
+  emit(session.steps);
+
+  // Agents whose spawning step couldn't be resolved go to the tail rather than
+  // disappearing; unparented ones first so their children nest under them.
+  for (const sub of session.subagents) {
+    if (emitted.has(sub.agentId) || typeof sub.parentStepIndex === 'number') continue;
+    emitted.add(sub.agentId);
+    emit(sub.steps, sub.agentId);
   }
   for (const sub of session.subagents) {
-    if (typeof sub.parentStepIndex !== 'number') {
-      for (const sStep of sub.steps) push(sStep, sub.agentId);
-    }
+    if (emitted.has(sub.agentId)) continue;
+    emitted.add(sub.agentId);
+    emit(sub.steps, sub.agentId);
   }
   return out;
+}
+
+/** Key for "agents spawned by step N of agent X" (X empty = main session). */
+export function spawnKey(agentId: string | undefined, stepIndex: number): string {
+  return `${agentId ?? ''}:${stepIndex}`;
 }
 
 export interface AnalysisResult {
@@ -120,8 +182,10 @@ export interface Finding {
   title: string;
   description: string;
   wastedCost?: number;
-  /** Local step indices within the session/agent the finding belongs to (matches host Finding.steps). */
+  toolName?: string;
+  // The analyzer emits `steps`; older/derived shapes use `affectedSteps`.
   steps?: number[];
+  affectedSteps?: number[];
 }
 
 export type ViewMode = 'overview' | 'steps' | 'findings' | 'files' | 'subagents' | 'cost' | 'context';

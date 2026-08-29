@@ -21,6 +21,14 @@
   border-bottom: 1px solid var(--border);
 }
 
+.cr-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .cr-kind {
   font-family: var(--font-code), monospace;
   font-size: 11px;
@@ -59,8 +67,8 @@
 }
 
 .cr-toggle-btn.active {
-  background: var(--accent);
-  color: var(--bg);
+  background: rgba(128, 128, 128, 0.22);
+  color: var(--text-bright);
 }
 
 /* Pretty markdown body */
@@ -69,12 +77,16 @@
   line-height: 1.65;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  max-height: 720px;
-  overflow-y: auto;
+  max-height: none;
 }
 
-.cr-pretty > *:first-child { margin-top: 0; }
-.cr-pretty > *:last-child  { margin-bottom: 0; }
+.cr-pretty>*:first-child {
+  margin-top: 0;
+}
+
+.cr-pretty>*:last-child {
+  margin-bottom: 0;
+}
 
 .cr-pretty p {
   margin: 0 0 10px;
@@ -92,12 +104,27 @@
   line-height: 1.3;
 }
 
-.cr-pretty h1 { font-size: 1.4em; }
-.cr-pretty h2 { font-size: 1.25em; }
-.cr-pretty h3 { font-size: 1.1em; }
-.cr-pretty h4 { font-size: 1em; }
+.cr-pretty h1 {
+  font-size: 1.4em;
+}
+
+.cr-pretty h2 {
+  font-size: 1.25em;
+}
+
+.cr-pretty h3 {
+  font-size: 1.1em;
+}
+
+.cr-pretty h4 {
+  font-size: 1em;
+}
+
 .cr-pretty h5,
-.cr-pretty h6 { font-size: 0.95em; color: var(--text-dim); }
+.cr-pretty h6 {
+  font-size: 0.95em;
+  color: var(--text-dim);
+}
 
 .cr-pretty ul,
 .cr-pretty ol {
@@ -109,7 +136,7 @@
   margin: 2px 0;
 }
 
-.cr-pretty li > p {
+.cr-pretty li>p {
   margin: 0;
 }
 
@@ -136,8 +163,13 @@
   text-decoration: underline;
 }
 
-.cr-pretty strong { color: var(--text-bright); }
-.cr-pretty em     { font-style: italic; }
+.cr-pretty strong {
+  color: var(--text-bright);
+}
+
+.cr-pretty em {
+  font-style: italic;
+}
 
 .cr-pretty code {
   font-family: var(--font-code), monospace;
@@ -212,7 +244,9 @@
   font-style: normal;
 }
 
-/* Raw view — straight monospace dump, no truncation */
+/* Raw view — straight monospace dump, no truncation. Lines keep their
+   original length and scroll sideways; the Wrap variant folds them to the
+   panel width instead. */
 .cr-raw {
   margin: 0;
   padding: 12px 14px;
@@ -220,9 +254,15 @@
   font-family: var(--font-code), monospace;
   font-size: 12px;
   line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text);
+  max-height: none;
+}
+
+.cr-raw-wrap {
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text);
-  max-height: 720px;
-  overflow-y: auto;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
 }

@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { AnalysisResult, Step, Subagent, Finding } from '../types/session';
-import { t } from '../i18n';
 import './AnalysisTab.css';
 
 interface Props {
@@ -14,51 +13,43 @@ interface Props {
 
 type StepResolver = (localIdx: number) => number | undefined;
 
-// Display-only labels. `finding.severity` itself stays untouched — it is used
-// as a CSS modifier class and must keep its raw value.
-const SEVERITY_KEY: Record<string, string> = {
-  error: 'analysis.severityError',
-  warning: 'analysis.severityWarning',
-  info: 'analysis.severityInfo',
-};
-const severityLabel = (severity: string): string =>
-  SEVERITY_KEY[severity] ? t(SEVERITY_KEY[severity]) : severity;
-
 const renderFinding = (
   finding: Finding,
   i: number,
   resolveStep: StepResolver,
   onGoToStep: (gi: number) => void
-) => (
-  <div key={i} className={`finding-card ${finding.severity}`}>
-    <div className="finding-header">
-      <span className="finding-severity">{severityLabel(finding.severity)}</span>
-      <h3>{finding.title}</h3>
+) => {
+  const affected = finding.affectedSteps ?? finding.steps ?? [];
+  return (
+    <div key={i} className={`finding-card ${finding.severity}`}>
+      <div className="finding-header">
+        <span className="finding-severity">{finding.severity}</span>
+        {finding.toolName && <span className="finding-tool">{finding.toolName}</span>}
+        <h3>{finding.title}</h3>
+      </div>
+      <p className="finding-description">{finding.description}</p>
+      {!!finding.wastedCost && finding.wastedCost > 0 && (
+        <div className="finding-cost">Wasted: ${finding.wastedCost.toFixed(4)}</div>
+      )}
+      {affected.length > 0 && (
+        <div className="finding-steps">
+          <span>Affected steps:</span>
+          {affected.map(idx => {
+            const gi = resolveStep(idx);
+            if (gi === undefined) {
+              return <span key={idx} className="step-link disabled">#{idx}</span>;
+            }
+            return (
+              <button key={idx} className="step-link" onClick={() => onGoToStep(gi)}>
+                #{gi}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
-    <p className="finding-description">{finding.description}</p>
-    {finding.wastedCost !== undefined && finding.wastedCost > 0 && (
-      <div className="finding-cost">
-        {t('analysis.wasted', { cost: finding.wastedCost.toFixed(4) })}
-      </div>
-    )}
-    {finding.steps && finding.steps.length > 0 && (
-      <div className="finding-steps">
-        <span>{t('analysis.affectedSteps')}</span>
-        {finding.steps.map(idx => {
-          const gi = resolveStep(idx);
-          if (gi === undefined) {
-            return <span key={idx} className="step-link disabled">#{idx}</span>;
-          }
-          return (
-            <button key={idx} className="step-link" onClick={() => onGoToStep(gi)}>
-              #{gi}
-            </button>
-          );
-        })}
-      </div>
-    )}
-  </div>
-);
+  );
+};
 
 const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Props) => {
   // Build resolvers from (agentId | undefined, localIdx) → globalIndex so
@@ -96,7 +87,7 @@ const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Prop
     return (
       <div className="analysis-tab">
         <div className="empty-state">
-          <p>{t('analysis.emptyState')}</p>
+          <p>No analysis findings. Session looks optimal!</p>
         </div>
       </div>
     );
@@ -110,22 +101,22 @@ const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Prop
   return (
     <div className="analysis-tab">
       <div className="debug-summary">
-        <h3>{t('analysis.debugSummary')}</h3>
+        <h3>Debug Summary</h3>
         <div className="summary-grid">
           <div className="summary-card">
-            <div className="summary-label">{t('analysis.findings')}</div>
+            <div className="summary-label">Findings</div>
             <div className="summary-value">{totalFindings}</div>
           </div>
           <div className="summary-card">
-            <div className="summary-label">{t('analysis.efficiency')}</div>
+            <div className="summary-label">Efficiency</div>
             <div className="summary-value">{efficiency.toFixed(1)}%</div>
           </div>
           <div className="summary-card">
-            <div className="summary-label">{t('analysis.wastedCost')}</div>
+            <div className="summary-label">Wasted Cost</div>
             <div className="summary-value">${wastedCost.toFixed(4)}</div>
           </div>
           <div className="summary-card">
-            <div className="summary-label">{t('analysis.totalSteps')}</div>
+            <div className="summary-label">Total Steps</div>
             <div className="summary-value">{flatSteps.length}</div>
           </div>
         </div>
@@ -134,10 +125,8 @@ const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Prop
       {mainFindings.length > 0 && (
         <div className="findings-section">
           <div className="findings-section-header">
-            <h3>{t('analysis.mainSession', { count: mainFindings.length })}</h3>
-            <span className="findings-section-meta">
-              {t('analysis.stepCount', { count: steps.length })}
-            </span>
+            <h3>Main session ({mainFindings.length})</h3>
+            <span className="findings-section-meta">{steps.length} steps</span>
           </div>
           <div className="findings-list">
             {mainFindings.map((f, i) => renderFinding(f, i, mainResolver, onGoToStep))}
@@ -154,15 +143,12 @@ const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Prop
             <div className="findings-section-header findings-section-agent">
               <h3>
                 <span className="agent-section-label">
-                  {sub.agentType || t('analysis.agentFallback')}
+                  {sub.agentType || 'agent'}
                 </span>
                 {sub.description || sub.prompt.slice(0, 80)}
               </h3>
               <span className="findings-section-meta">
-                {t('analysis.agentMeta', {
-                  count: sub.stepCount,
-                  cost: sub.totalCost.toFixed(4),
-                })}
+                {sub.stepCount} steps · ${sub.totalCost.toFixed(4)}
               </span>
             </div>
             <div className="findings-list">

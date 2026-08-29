@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
 import { Step } from '../types/session';
-import { t } from '../i18n';
 import './ContentRenderer.css';
 
 // ─── Markdown engine with code-block highlighting ───────────────────────
@@ -37,20 +36,26 @@ const escapeHtml = (s: string) =>
 // ─── Component ───────────────────────────────────────────────────────────
 interface Props {
   step: Step;
+  // Rendered at the left of the pretty/raw toolbar — token counts today.
+  meta?: React.ReactNode;
 }
 
-// `step.type` values stay raw (they drive the `cr-${kind}` class); only the
-// human-readable label is localized.
-const KIND_LABEL_KEY: Record<string, string> = {
-  text: 'contentRenderer.kindText',
-  thinking: 'contentRenderer.kindThinking',
+// Only kinds whose label says more than the step header already does. "Text"
+// and "Thinking" would just repeat the step type, so they carry no label.
+const KIND_LABEL: Record<string, string> = {
+  compact: 'Compaction Summary',
+  user: 'User Prompt',
 };
 
-const ContentRenderer = ({ step }: Props) => {
-  const [showRaw, setShowRaw] = useState(false);
+// pretty = markdown, raw = verbatim with horizontal scroll, wrap = raw with
+// long lines folded to the panel width.
+type View = 'pretty' | 'raw' | 'wrap';
+
+const ContentRenderer = ({ step, meta }: Props) => {
+  const [view, setView] = useState<View>('pretty');
   const content = step.content || '';
   const kind = step.type;
-  const label = KIND_LABEL_KEY[kind] ? t(KIND_LABEL_KEY[kind]) : kind;
+  const label = KIND_LABEL[kind];
 
   const html = useMemo(() => {
     if (!content) return '';
@@ -66,28 +71,39 @@ const ContentRenderer = ({ step }: Props) => {
   return (
     <div className={`content-renderer cr-${kind}`}>
       <div className="cr-toolbar">
-        <span className="cr-kind">{label}</span>
+        <div className="cr-toolbar-left">
+          {label && <span className="cr-kind">{label}</span>}
+          {meta}
+        </div>
         <div className="cr-toggle">
           <button
             type="button"
-            className={`cr-toggle-btn${!showRaw ? ' active' : ''}`}
-            onClick={() => setShowRaw(false)}
+            className={`cr-toggle-btn${view === 'pretty' ? ' active' : ''}`}
+            onClick={() => setView('pretty')}
           >
-            {t('contentRenderer.pretty')}
+            Pretty
           </button>
           <button
             type="button"
-            className={`cr-toggle-btn${showRaw ? ' active' : ''}`}
-            onClick={() => setShowRaw(true)}
+            className={`cr-toggle-btn${view === 'raw' ? ' active' : ''}`}
+            onClick={() => setView('raw')}
           >
-            {t('contentRenderer.raw')}
+            Raw
+          </button>
+          <button
+            type="button"
+            className={`cr-toggle-btn${view === 'wrap' ? ' active' : ''}`}
+            onClick={() => setView('wrap')}
+            title="Raw view with long lines wrapped to the panel width"
+          >
+            Wrap
           </button>
         </div>
       </div>
-      {showRaw ? (
-        <pre className="cr-raw">{content}</pre>
-      ) : (
+      {view === 'pretty' ? (
         <div className="cr-pretty" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <pre className={`cr-raw${view === 'wrap' ? ' cr-raw-wrap' : ''}`}>{content}</pre>
       )}
     </div>
   );

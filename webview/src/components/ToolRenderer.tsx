@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import hljs from 'highlight.js';
 import { diffLines } from 'diff';
-import { Step } from '../types/session';
-import { t, locale } from '../i18n';
+import { Attachment, Step } from '../types/session';
+import Attachments, { useAttachmentBytes } from './Attachments';
 import 'highlight.js/styles/github-dark.css';
 import './ToolRenderer.css';
 
@@ -162,27 +162,25 @@ const ReadRenderer = ({ input, result }: { input: any; result: any }) => {
   const file = result?.file ?? {};
   const totalLines: number | undefined = file.totalLines;
   const numLines: number | undefined = file.numLines;
-  const content: string | undefined = file.content;
+  // Sub-agent transcripts carry the result as plain text rather than the
+  // structured `{file: …}` envelope the main session records.
+  const content: string | undefined =
+    file.content ?? (typeof result === 'string' ? result : undefined);
   const startLine = offset && offset > 0 ? offset : 1;
 
   let metaParts: string[] = [];
   if (typeof numLines === 'number' && typeof totalLines === 'number') {
-    metaParts.push(t('toolRenderer.linesOfTotal', { lines: numLines, total: totalLines }));
+    metaParts.push(`${numLines}/${totalLines} lines`);
   } else if (typeof totalLines === 'number') {
-    metaParts.push(t('toolRenderer.lines', { lines: totalLines }));
+    metaParts.push(`${totalLines} lines`);
   }
-  if (offset) metaParts.push(t('toolRenderer.fromLine', { offset }));
-  if (limit) metaParts.push(t('toolRenderer.limit', { limit }));
+  if (offset) metaParts.push(`from line ${offset}`);
+  if (limit) metaParts.push(`limit ${limit}`);
   if (file.originalSize) metaParts.push(`${formatSize(file.originalSize)}`);
 
   return (
     <div className="tr-block">
-      <PathHeader
-        path={filePath}
-        badge="READ"
-        badgeKind="info"
-        meta={metaParts.join(' · ')}
-      />
+      <PathHeader path={filePath} meta={metaParts.join(' · ')} />
       {content ? (
         <CodeBlock
           code={content}
@@ -190,7 +188,7 @@ const ReadRenderer = ({ input, result }: { input: any; result: any }) => {
           startLine={startLine}
         />
       ) : (
-        <div className="tr-empty">{t('toolRenderer.readNoContent')}</div>
+        <div className="tr-empty">No content body returned with this read.</div>
       )}
     </div>
   );
@@ -202,14 +200,13 @@ const WriteRenderer = ({ input, result }: { input: any; result: any }) => {
   const isCreate = result?.type === 'create';
   return (
     <div className="tr-block">
+      {/* "CREATE" is not the tool name repeated — it distinguishes a new file
+          from an overwrite, which the header can't tell you. */}
       <PathHeader
         path={filePath}
-        badge={isCreate ? 'CREATE' : 'WRITE'}
-        badgeKind={isCreate ? 'success' : 'info'}
-        meta={t('toolRenderer.writeMeta', {
-          lines: content.split('\n').length,
-          size: formatSize(content.length),
-        })}
+        badge={isCreate ? 'CREATE' : undefined}
+        badgeKind="success"
+        meta={`${content.split('\n').length} lines · ${formatSize(content.length)}`}
       />
       <CodeBlock code={content} language={langFromPath(filePath)} />
     </div>
@@ -269,7 +266,7 @@ const EditRenderer = ({ input, result }: { input: any; result: any }) => {
   const replaceAll: boolean = input?.replace_all ?? result?.replaceAll ?? false;
   return (
     <div className="tr-block">
-      <PathHeader path={filePath} badge="EDIT" badgeKind="info" />
+      <PathHeader path={filePath} />
       <DiffView filePath={filePath} spec={{ oldString, newString, replaceAll }} />
     </div>
   );
@@ -282,19 +279,12 @@ const MultiEditRenderer = ({ input, result }: { input: any; result: any }) => {
     <div className="tr-block">
       <PathHeader
         path={filePath}
-        badge="MULTI-EDIT"
-        badgeKind="info"
-        meta={t(
-          edits.length === 1 ? 'toolRenderer.editCountOne' : 'toolRenderer.editCountOther',
-          { count: edits.length }
-        )}
+        meta={`${edits.length} edit${edits.length === 1 ? '' : 's'}`}
       />
       <div className="tr-multi-edits">
         {edits.map((e, i) => (
           <div key={i} className="tr-multi-edit-item">
-            <div className="tr-multi-edit-header">
-              {t('toolRenderer.editItem', { number: i + 1 })}
-            </div>
+            <div className="tr-multi-edit-header">Edit {i + 1}</div>
             <DiffView
               filePath={filePath}
               spec={{
@@ -312,7 +302,6 @@ const MultiEditRenderer = ({ input, result }: { input: any; result: any }) => {
 
 const BashRenderer = ({ input, result }: { input: any; result: any }) => {
   const cmd: string = input?.command || '';
-  const description: string | undefined = input?.description;
   let stdout = '';
   let stderr = '';
   let interrupted = false;
@@ -329,18 +318,18 @@ const BashRenderer = ({ input, result }: { input: any; result: any }) => {
 
   return (
     <div className="tr-block tr-bash">
-      <div className="tr-bash-header">
-        <span className="tr-badge tr-badge-bash">BASH</span>
-        {description && <span className="tr-bash-desc">{description}</span>}
-        {interrupted && (
-          <span className="tr-badge tr-badge-warn">{t('toolRenderer.interrupted')}</span>
-        )}
-        {exitCode !== undefined && (
-          <span className={`tr-badge ${errored ? 'tr-badge-error' : 'tr-badge-success'}`}>
-            {t('toolRenderer.exitCode', { code: exitCode })}
-          </span>
-        )}
-      </div>
+      {/* Only exit state lives here now — the tool name is in the step header
+          and the description was promoted there too. */}
+      {(interrupted || exitCode !== undefined) && (
+        <div className="tr-bash-header">
+          {interrupted && <span className="tr-badge tr-badge-warn">interrupted</span>}
+          {exitCode !== undefined && (
+            <span className={`tr-badge ${errored ? 'tr-badge-error' : 'tr-badge-success'}`}>
+              exit {exitCode}
+            </span>
+          )}
+        </div>
+      )}
       <div className="tr-bash-cmd">
         <span className="tr-bash-prompt">$</span>
         <span
@@ -374,19 +363,11 @@ const GrepRenderer = ({ input, result }: { input: any; result: any }) => {
   return (
     <div className="tr-block">
       <div className="tr-grep-header">
-        <span className="tr-badge tr-badge-info">GREP</span>
         <code className="tr-grep-pattern">{pattern}</code>
-        {path && <span className="tr-meta">{t('toolRenderer.inPath', { path })}</span>}
-        {glob && <span className="tr-meta">{t('toolRenderer.globFilter', { glob })}</span>}
+        {path && <span className="tr-meta">in {path}</span>}
+        {glob && <span className="tr-meta">glob: {glob}</span>}
         {outputMode && <span className="tr-meta">{outputMode}</span>}
-        <span className="tr-meta">
-          {t(
-            lines.length === 1
-              ? 'toolRenderer.matchCountOne'
-              : 'toolRenderer.matchCountOther',
-            { count: lines.length }
-          )}
-        </span>
+        <span className="tr-meta">{lines.length} match{lines.length === 1 ? '' : 'es'}</span>
       </div>
       <pre className="tr-grep-body">
         <code>{lines.join('\n')}</code>
@@ -404,15 +385,9 @@ const GlobRenderer = ({ input, result }: { input: any; result: any }) => {
   return (
     <div className="tr-block">
       <div className="tr-grep-header">
-        <span className="tr-badge tr-badge-info">GLOB</span>
         <code className="tr-grep-pattern">{pattern}</code>
-        {path && <span className="tr-meta">{t('toolRenderer.inPath', { path })}</span>}
-        <span className="tr-meta">
-          {t(
-            files.length === 1 ? 'toolRenderer.fileCountOne' : 'toolRenderer.fileCountOther',
-            { count: files.length }
-          )}
-        </span>
+        {path && <span className="tr-meta">in {path}</span>}
+        <span className="tr-meta">{files.length} file{files.length === 1 ? '' : 's'}</span>
       </div>
       <ul className="tr-glob-list">
         {files.map((f, i) => (
@@ -435,7 +410,6 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
   const inputObj = input && typeof input === 'object' ? input : {};
   const resultObj = result && typeof result === 'object' && !Array.isArray(result) ? result : {};
 
-  const description: string = asStr(inputObj.description);
   const prompt: string = asStr(inputObj.prompt);
   const subagentType: string = asStr(inputObj.subagent_type);
   const agentId: string = asStr(resultObj.agentId);
@@ -448,35 +422,29 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
 
   return (
     <div className="tr-block">
-      <div className="tr-task-header">
-        <span className="tr-badge tr-badge-task">TASK</span>
-        {subagentType && <span className="tr-task-type">{subagentType}</span>}
-        {description && <span className="tr-task-desc">{description}</span>}
-      </div>
+      {/* The description is the step header's subtitle now; the agent type is
+          the one thing here the header doesn't carry. */}
+      {subagentType && (
+        <div className="tr-task-header">
+          <span className="tr-task-type">{subagentType}</span>
+        </div>
+      )}
       {(agentId || status) && (
         <div className="tr-task-meta">
           {status && <span className={`tr-badge tr-badge-${status === 'completed' ? 'success' : 'info'}`}>{status}</span>}
           {totalDurationMs !== undefined && <span className="tr-meta">{formatDuration(totalDurationMs)}</span>}
-          {totalTokens !== undefined && (
-            <span className="tr-meta">
-              {t('toolRenderer.tokenCount', { count: totalTokens.toLocaleString(locale) })}
-            </span>
-          )}
-          {totalToolUseCount !== undefined && (
-            <span className="tr-meta">
-              {t('toolRenderer.toolCallCount', { count: totalToolUseCount })}
-            </span>
-          )}
+          {totalTokens !== undefined && <span className="tr-meta">{totalTokens.toLocaleString()} tokens</span>}
+          {totalToolUseCount !== undefined && <span className="tr-meta">{totalToolUseCount} tool calls</span>}
           {agentId && <span className="tr-meta tr-mono">{agentId.slice(0, 8)}</span>}
         </div>
       )}
       <div className="tr-task-prompt">
-        <div className="tr-section-label">{t('toolRenderer.prompt')}</div>
+        <div className="tr-section-label">Prompt</div>
         <pre className="tr-text">{prompt}</pre>
       </div>
       {content && (
         <div className="tr-task-result">
-          <div className="tr-section-label">{t('toolRenderer.result')}</div>
+          <div className="tr-section-label">Result</div>
           <pre className="tr-text">{content}</pre>
         </div>
       )}
@@ -489,13 +457,7 @@ const TodoWriteRenderer = ({ input }: { input: any; result: any }) => {
   return (
     <div className="tr-block">
       <div className="tr-todo-header">
-        <span className="tr-badge tr-badge-info">TODO</span>
-        <span className="tr-meta">
-          {t(
-            todos.length === 1 ? 'toolRenderer.itemCountOne' : 'toolRenderer.itemCountOther',
-            { count: todos.length }
-          )}
-        </span>
+        <span className="tr-meta">{todos.length} item{todos.length === 1 ? '' : 's'}</span>
       </div>
       <ul className="tr-todo-list">
         {todos.map((t, i) => {
@@ -525,17 +487,16 @@ const WebFetchRenderer = ({ input, result }: { input: any; result: any }) => {
   return (
     <div className="tr-block">
       <div className="tr-task-header">
-        <span className="tr-badge tr-badge-info">FETCH</span>
         <a href={url} className="tr-link" target="_blank" rel="noreferrer">{url}</a>
       </div>
       {prompt && (
         <div className="tr-task-prompt">
-          <div className="tr-section-label">{t('toolRenderer.prompt')}</div>
+          <div className="tr-section-label">Prompt</div>
           <pre className="tr-text">{prompt}</pre>
         </div>
       )}
       <div className="tr-task-result">
-        <div className="tr-section-label">{t('toolRenderer.result')}</div>
+        <div className="tr-section-label">Result</div>
         <pre className="tr-text">{content}</pre>
       </div>
     </div>
@@ -549,7 +510,6 @@ const WebSearchRenderer = ({ input, result }: { input: any; result: any }) => {
   return (
     <div className="tr-block">
       <div className="tr-task-header">
-        <span className="tr-badge tr-badge-info">SEARCH</span>
         <code className="tr-grep-pattern">{query}</code>
       </div>
       <pre className="tr-text">{content}</pre>
@@ -557,25 +517,69 @@ const WebSearchRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
-const RawView = ({ step }: { step: Step }) => {
+/**
+ * The base64 payload of a result's attachments. The parser leaves a `[image]`
+ * marker in the result text — that is the parsed view — so the raw view has to
+ * go back to the host for the bytes the transcript actually holds.
+ */
+const RawAttachments = ({
+  attachments,
+  agentId,
+  preClass,
+}: {
+  attachments: Attachment[];
+  agentId?: string;
+  preClass: string;
+}) => {
+  const { blobs, request } = useAttachmentBytes(attachments, agentId);
+
+  useEffect(() => {
+    for (const attachment of attachments) request(attachment.id);
+  }, [attachments, request]);
+
+  return (
+    <>
+      {attachments.map(attachment => {
+        const blob = blobs[attachment.id];
+        return (
+          <div className="tr-raw-section" key={attachment.id}>
+            <div className="tr-section-label">
+              {attachment.name} · {attachment.mediaType} (base64)
+            </div>
+            <pre className={preClass}>
+              {blob?.base64 ?? blob?.error ?? 'Loading…'}
+            </pre>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
+const RawView = ({ step, wrap }: { step: Step; wrap?: boolean }) => {
   const result = parseToolResult(step.toolResult);
+  const preClass = `tr-code-raw${wrap ? ' tr-code-raw-wrap' : ''}`;
+  const attachments = step.attachments ?? [];
   return (
     <div className="tr-raw">
       {step.toolInput !== undefined && (
         <div className="tr-raw-section">
-          <div className="tr-section-label">{t('toolRenderer.toolInput')}</div>
-          <pre className="tr-code-raw">{JSON.stringify(step.toolInput, null, 2)}</pre>
+          <div className="tr-section-label">Tool Input</div>
+          <pre className={preClass}>{JSON.stringify(step.toolInput, null, 2)}</pre>
         </div>
       )}
       {step.toolResult !== undefined && (
         <div className="tr-raw-section">
-          <div className="tr-section-label">{t('toolRenderer.toolResult')}</div>
-          <pre className="tr-code-raw">
+          <div className="tr-section-label">Tool Result</div>
+          <pre className={preClass}>
             {result.ok && typeof result.value === 'object'
               ? JSON.stringify(result.value, null, 2)
               : String(result.value ?? step.toolResult)}
           </pre>
         </div>
+      )}
+      {attachments.length > 0 && (
+        <RawAttachments attachments={attachments} agentId={step.agentId} preClass={preClass} />
       )}
     </div>
   );
@@ -589,12 +593,9 @@ const formatSize = (bytes: number): string => {
 };
 
 const formatDuration = (ms: number): string => {
-  if (ms < 1000) return t('fmt.durationMs', { value: ms });
-  if (ms < 60_000) return t('fmt.durationSec', { value: (ms / 1000).toFixed(1) });
-  return t('fmt.durationMinSec', {
-    minutes: Math.floor(ms / 60_000),
-    seconds: Math.floor((ms % 60_000) / 1000),
-  });
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
 };
 
 // ─── Dispatcher ───────────────────────────────────────────────────────────
@@ -613,54 +614,78 @@ const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Elem
   WebSearch: WebSearchRenderer,
 };
 
+// pretty = per-tool renderer, raw = JSON dump with horizontal scroll,
+// wrap = same dump with long lines folded to the panel width.
+type View = 'pretty' | 'raw' | 'wrap';
+
 interface ToolRendererProps {
   step: Step;
+  // Rendered at the left of the pretty/raw toolbar — token counts today.
+  meta?: React.ReactNode;
 }
 
-const ToolRenderer = ({ step }: ToolRendererProps) => {
-  const [showRaw, setShowRaw] = useState(false);
+const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
+  const [view, setView] = useState<View>('pretty');
   const tool = step.toolName;
   const renderer = tool ? RENDERERS[tool] : undefined;
   const parsed = useMemo(() => parseToolResult(step.toolResult), [step.toolResult]);
+  const attachments = step.attachments ?? [];
 
   // No tool data at all — nothing to render.
   if (!step.toolInput && !step.toolResult) return null;
 
-  const hasPretty = !!renderer;
+  // A result that came back as a picture or a file is already parsed: showing
+  // it is showing the attachment. So a tool with no renderer of its own still
+  // gets a pretty view when it returned one.
+  const hasPretty = !!renderer || attachments.length > 0;
+  // Tools without a pretty renderer fall back to Raw, but keep Wrap available.
+  const active: View = !hasPretty && view === 'pretty' ? 'raw' : view;
   const isError = step.toolSuccess === false;
   const errorMessage = isError ? extractErrorMessage(parsed.value) : '';
 
   return (
     <div className={`tool-renderer${isError ? ' tool-renderer-error' : ''}`}>
       <div className="tr-toolbar">
-        <span className="tr-tool-name">{tool || t('toolRenderer.toolFallback')}</span>
-        {isError && (
-          <span className="tr-toolbar-error-badge">{t('toolRenderer.errorBadge')}</span>
-        )}
-        {hasPretty && (
-          <div className="tr-toggle">
+        <div className="tr-toolbar-left">
+          {isError && <span className="tr-toolbar-error-badge">ERROR</span>}
+          {meta}
+        </div>
+        {/* Tools without a dedicated renderer (MCP ones especially) still get
+            the bar — Raw/Wrap only — so the toolbar's token counts have a
+            consistent home. */}
+        <div className="tr-toggle">
+          {hasPretty && (
             <button
-              className={`tr-toggle-btn${!showRaw ? ' active' : ''}`}
-              onClick={() => setShowRaw(false)}
+              className={`tr-toggle-btn${active === 'pretty' ? ' active' : ''}`}
+              onClick={() => setView('pretty')}
               type="button"
             >
-              {t('toolRenderer.pretty')}
+              Pretty
             </button>
-            <button
-              className={`tr-toggle-btn${showRaw ? ' active' : ''}`}
-              onClick={() => setShowRaw(true)}
-              type="button"
-            >
-              {t('toolRenderer.raw')}
-            </button>
-          </div>
-        )}
+          )}
+          <button
+            className={`tr-toggle-btn${active === 'raw' ? ' active' : ''}`}
+            onClick={() => setView('raw')}
+            type="button"
+            title={hasPretty ? undefined : 'No pretty view for this tool'}
+          >
+            Raw
+          </button>
+          <button
+            className={`tr-toggle-btn${active === 'wrap' ? ' active' : ''}`}
+            onClick={() => setView('wrap')}
+            type="button"
+            title="Raw view with long lines wrapped to the panel width"
+          >
+            Wrap
+          </button>
+        </div>
       </div>
 
       {/* Error banner — pretty view only. The full message is shown verbatim
           (no truncation) so the operator can debug from a glance. The raw
           view already exposes the same data via the JSON dump. */}
-      {!showRaw && isError && errorMessage && (
+      {active === 'pretty' && isError && errorMessage && (
         <div className="tr-error-banner">
           <div className="tr-error-banner-head">
             <svg
@@ -677,18 +702,21 @@ const ToolRenderer = ({ step }: ToolRendererProps) => {
               <line x1="12" y1="8" x2="12" y2="13" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <span className="tr-error-banner-label">
-              {t('toolRenderer.errorBannerLabel')}
-            </span>
+            <span className="tr-error-banner-label">Tool returned an error</span>
           </div>
           <pre className="tr-error-banner-body">{errorMessage}</pre>
         </div>
       )}
 
-      {hasPretty && !showRaw ? (
-        renderer!({ input: step.toolInput, result: parsed.value })
+      {active === 'pretty' ? (
+        <>
+          {renderer?.({ input: step.toolInput, result: parsed.value })}
+          {attachments.length > 0 && (
+            <Attachments attachments={attachments} agentId={step.agentId} />
+          )}
+        </>
       ) : (
-        <RawView step={step} />
+        <RawView step={step} wrap={active === 'wrap'} />
       )}
     </div>
   );

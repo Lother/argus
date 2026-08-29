@@ -8,11 +8,21 @@ import {
   ContextMetrics,
   SessionDetail,
 } from '../types/models';
-import { t } from '../i18n/vscode';
+
+export interface AnalysisOptions {
+  /**
+   * Report a compaction only where the transcript actually marks one
+   * (`isCompactSummary`), instead of inferring it from a token drop. The
+   * heuristic also fires on ordinary prompt-cache rotation — a step whose
+   * prompt had to be rewritten into the cache looks exactly like a context
+   * reset when measured as `input + cache_creation`.
+   */
+  realCompactsOnly?: boolean;
+}
 
 export interface AnalysisRule {
   name: string;
-  analyze(steps: Step[]): Finding[];
+  analyze(steps: Step[], options?: AnalysisOptions): Finding[];
 }
 
 export class AnalyzerService {
@@ -33,7 +43,11 @@ export class AnalyzerService {
   /**
    * Analyze a session and return findings
    */
-  analyze(session: SessionDetail, lang: string = 'en'): AnalysisResult {
+  analyze(
+    session: SessionDetail,
+    options: AnalysisOptions = {},
+    lang: string = 'en'
+  ): AnalysisResult {
     const result: AnalysisResult = {
       findings: [],
       totalCost: session.totalCost,
@@ -44,7 +58,7 @@ export class AnalyzerService {
 
     // Run each rule
     for (const rule of this.rules) {
-      const findings = rule.analyze(session.steps);
+      const findings = rule.analyze(session.steps, options);
       result.findings.push(...findings);
     }
 
@@ -256,8 +270,8 @@ class DuplicateReadRule implements AnalysisRule {
       findings.push({
         rule: 'duplicate_read',
         severity: 'warning',
-        title: t('analyzer.duplicateReads.title'),
-        description: t('analyzer.duplicateReads.description', { files: duplicates.join(', ') }),
+        title: 'Duplicate File Reads',
+        description: `The following files were read multiple times: ${duplicates.join(', ')}`,
         steps: allSteps,
         wastedCost: totalWasted,
         details: duplicates,
@@ -303,8 +317,8 @@ class UnusedReadRule implements AnalysisRule {
       {
         rule: 'unused_read',
         severity: 'info',
-        title: t('analyzer.unusedReads.title'),
-        description: t('analyzer.unusedReads.description', { count: unusedReads.length }),
+        title: 'Potentially Unused Reads',
+        description: `Found ${unusedReads.length} file reads that may not have been used`,
         steps: unusedReads,
         wastedCost,
       },
@@ -343,11 +357,12 @@ class RetryLoopRule implements AnalysisRule {
         findings.push({
           rule: 'retry_loop',
           severity: 'error',
-          title: t('analyzer.retryLoop.title'),
-          description: t('analyzer.retryLoop.description', { tool: step1.toolName || '', count: failCount }),
+          title: 'Retry Loop Detected',
+          description: `Tool "${step1.toolName}" failed ${failCount} times in a row`,
           steps: failSteps,
           wastedCost: totalCost,
           category: 'loop',
+          toolName: step1.toolName,
         });
 
         i += failCount - 1; // Skip processed steps
@@ -374,8 +389,8 @@ class FailedToolRule implements AnalysisRule {
       {
         rule: 'failed_tool',
         severity: 'warning',
-        title: t('analyzer.failedTool.title'),
-        description: t('analyzer.failedTool.description', { count: failedSteps.length }),
+        title: 'Failed Tool Calls',
+        description: `Found ${failedSteps.length} failed tool calls`,
         steps: failedSteps.map(s => s.index),
         wastedCost,
       },
@@ -445,11 +460,8 @@ class ContextPressureRule implements AnalysisRule {
       {
         rule: 'context_pressure',
         severity: 'warning',
-        title: t('analyzer.contextPressure.title', { count: pressureSteps.length }),
-        description: t('analyzer.contextPressure.description', {
-          avg: Math.round(peakAvg),
-          threshold: THRESHOLD,
-        }),
+        title: `High Context Pressure (${pressureSteps.length} steps)`,
+        description: `Detected sustained high input token usage averaging ${Math.round(peakAvg)} tokens (threshold: ${THRESHOLD})`,
         steps: pressureSteps,
         wastedCost: 0,
         confidence,
@@ -459,53 +471,19 @@ class ContextPressureRule implements AnalysisRule {
   }
 }
 
+interface Compaction {
+  stepIndex: number;
+  dropTokens: number;
+  dropPct: number;
+}
+
 class CompactionDetectedRule implements AnalysisRule {
   name = 'compaction_detected';
 
-  analyze(steps: Step[]): Finding[] {
-    const DROP_RATIO = 0.30;
-    const MIN_ABS_DROP = 20000;
-
-    interface Compaction {
-      stepIndex: number;
-      dropTokens: number;
-      dropPct: number;
-    }
-
-    const compactions: Compaction[] = [];
-    const filesReadBefore = new Map<string, boolean>();
-    let prevInput = -1;
-
-    for (const step of steps) {
-      // Track files read
-      if (step.type === 'tool_call' && step.toolName === 'Read') {
-        const filePath = step.toolInput?.file_path;
-        if (filePath) {
-          filesReadBefore.set(filePath, true);
-        }
-      }
-
-      if (!step.usage) {
-        continue;
-      }
-
-      const currInput = step.usage.input_tokens + step.usage.cache_creation_input_tokens;
-
-      if (prevInput > 0 && currInput > 0) {
-        const drop = prevInput - currInput;
-        const pct = drop / prevInput;
-
-        if (pct > DROP_RATIO && drop > MIN_ABS_DROP) {
-          compactions.push({
-            stepIndex: step.index,
-            dropTokens: drop,
-            dropPct: pct,
-          });
-        }
-      }
-
-      prevInput = currInput;
-    }
+  analyze(steps: Step[], options?: AnalysisOptions): Finding[] {
+    const compactions = options?.realCompactsOnly
+      ? this.fromCompactMarkers(steps)
+      : this.fromTokenDrops(steps);
 
     if (compactions.length === 0) {
       return [];
@@ -546,22 +524,113 @@ class CompactionDetectedRule implements AnalysisRule {
 
       const allSteps = [compaction.stepIndex, ...rereadSteps];
 
+      const dropText =
+        compaction.dropTokens > 0
+          ? `Detected ${compaction.dropTokens.toLocaleString()} token drop (${(compaction.dropPct * 100).toFixed(0)}%). `
+          : '';
+
       findings.push({
         rule: 'compaction_detected',
         severity: 'info',
-        title: t('analyzer.compaction.title', { step: compaction.stepIndex }),
-        description: t('analyzer.compaction.description', {
-          tokens: compaction.dropTokens.toLocaleString(),
-          pct: (compaction.dropPct * 100).toFixed(0),
-          count: rereadSteps.length,
-        }),
+        // No step number in the title: `steps` here are session-local indices,
+        // while the UI renders globalIndex (which differs once subagent steps
+        // are interleaved). The affected-step link below carries the right one.
+        title: 'Context Compaction',
+        description: `${dropText}${rereadSteps.length} files re-read after compaction.`,
         steps: allSteps,
         wastedCost: rereadCost,
-        confidence: 0.8,
+        // A transcript marker is fact, not inference.
+        confidence: options?.realCompactsOnly ? 1.0 : 0.8,
         category: 'context',
       });
     }
 
     return findings;
+  }
+
+  /**
+   * Compaction boundaries as recorded by Claude Code itself. The drop is
+   * measured on the full prompt (`input + cache_creation + cache_read`),
+   * because that is the number a compaction actually shrinks — the
+   * `input + cache_creation` sum used by the heuristic below typically *grows*
+   * across a real compaction, as the summary has to be written to cache.
+   */
+  private fromCompactMarkers(steps: Step[]): Compaction[] {
+    const compactions: Compaction[] = [];
+    let prevFull = -1;
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+
+      if (step.type === 'compact') {
+        // The compact step carries no usage of its own — the shrunken context
+        // first shows up on the next step that has any.
+        const nextFull = this.fullContext(steps.slice(i + 1).find(s => s.usage));
+        const drop = prevFull > 0 && nextFull > 0 ? prevFull - nextFull : 0;
+        compactions.push({
+          stepIndex: step.index,
+          dropTokens: drop,
+          dropPct: drop > 0 ? drop / prevFull : 0,
+        });
+        continue;
+      }
+
+      const full = this.fullContext(step);
+      if (full > 0) {
+        prevFull = full;
+      }
+    }
+
+    return compactions;
+  }
+
+  /** Whole prompt the step was billed for, cached parts included. */
+  private fullContext(step?: Step): number {
+    if (!step?.usage) {
+      return -1;
+    }
+    return (
+      step.usage.input_tokens +
+      step.usage.cache_creation_input_tokens +
+      step.usage.cache_read_input_tokens
+    );
+  }
+
+  /**
+   * Heuristic fallback: a large drop in `input + cache_creation`. Catches
+   * compactions in transcripts written before the marker existed, at the cost
+   * of also firing on prompt-cache rotation.
+   */
+  private fromTokenDrops(steps: Step[]): Compaction[] {
+    const DROP_RATIO = 0.30;
+    const MIN_ABS_DROP = 20000;
+
+    const compactions: Compaction[] = [];
+    let prevInput = -1;
+
+    for (const step of steps) {
+      if (!step.usage) {
+        continue;
+      }
+
+      const currInput = step.usage.input_tokens + step.usage.cache_creation_input_tokens;
+
+      if (prevInput > 0 && currInput > 0) {
+        const drop = prevInput - currInput;
+        const pct = drop / prevInput;
+
+        if (pct > DROP_RATIO && drop > MIN_ABS_DROP) {
+          compactions.push({
+            stepIndex: step.index,
+            dropTokens: drop,
+            dropPct: pct,
+          });
+        }
+      }
+
+      prevInput = currInput;
+    }
+
+    return compactions;
   }
 }

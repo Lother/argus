@@ -3,14 +3,21 @@ import * as path from 'path';
 import { SessionSummary } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 import { ParserService } from './parserService';
+import { SearchTarget } from './searchService';
 
 export interface DiscoveredSession {
   sessionId: string;
   filePath: string;
   projectDir: string;
+  /** Sub-agent transcripts spawned by this session, if any. */
+  subagentFiles: string[];
   project: string;
+  /** Absolute cwd of the session, when known ('' otherwise). */
+  projectPath: string;
   model: string;
   prompt: string;
+  /** Title Claude Code generated for the session, '' when it never did. */
+  aiTitle: string;
   timestamp: Date;
   lastModified: Date;
   source: 'history' | 'scan';
@@ -25,9 +32,18 @@ interface SessionFileInfo {
   sessionId: string;
   filePath: string;
   projectDir: string;
+  subagentFiles: string[];
 }
 
 export class DiscoveryService {
+  /** How recently a transcript must have been written to count as live. */
+  private static readonly ACTIVE_WINDOW_MS = 2 * 60 * 1000;
+  /**
+   * Past this age, a session is old enough that no sub-agent of it can still
+   * be running, so its sub-agent transcripts aren't worth stat-ing.
+   */
+  private static readonly SUBAGENT_LOOKBACK_MS = 6 * 60 * 60 * 1000;
+
   private sessionIndex: Map<string, DiscoveredSession> = new Map();
   private claudeDirs: string[] = [];
   private lastDiscovery: Date = new Date(0);
@@ -75,6 +91,7 @@ export class DiscoveryService {
             sessionId,
             filePath: path.join(projDir, file.name),
             projectDir: projDir,
+            subagentFiles: this.listSubagentFiles(projDir, sessionId),
           });
         }
       }
@@ -129,23 +146,36 @@ export class DiscoveryService {
 
     if (needsDiscovery) {
       await this.refreshDiscovery();
+    } else {
+      await this.refreshChangedSessions();
     }
 
+    return this.getSessionSummaries();
+  }
+
+  /**
+   * Project the current index into summaries, without touching the filesystem
+   * beyond the liveness check. Callers that just refreshed the index use this
+   * instead of `getSessionList()` to avoid a second pass over every session.
+   *
+   * `isActive` depends on wall-clock time, so it is recomputed on every call
+   * rather than cached alongside the rest of the metadata.
+   */
+  getSessionSummaries(): SessionSummary[] {
     const now = Date.now();
     const summaries: SessionSummary[] = [];
 
     for (const ds of this.sessionIndex.values()) {
-      // A session is "active" if its file was modified within the last 2 minutes
-      const isActive = now - ds.lastModified.getTime() < 2 * 60 * 1000;
-
       summaries.push({
         sessionId: ds.sessionId,
         prompt: ds.prompt,
+        aiTitle: ds.aiTitle || undefined,
         project: ds.project,
+        projectPath: ds.projectPath,
         model: ds.model,
         timestamp: ds.timestamp,
         lastModified: ds.lastModified,
-        isActive,
+        isActive: this.isSessionActive(ds, now),
       });
     }
 
@@ -153,6 +183,109 @@ export class DiscoveryService {
     summaries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
     return summaries;
+  }
+
+  /** True when the session is still in the index. */
+  hasSession(sessionId: string): boolean {
+    return this.sessionIndex.has(sessionId);
+  }
+
+  /**
+   * Liveness check for one named session, guarding destructive actions.
+   *
+   * Unlike the indexed `isActive`, this re-stats the transcript instead of
+   * trusting the cached mtime: a watcher event we missed would otherwise make
+   * a running session look dead, and here that is the difference between
+   * keeping and losing its history. The coarse age cutoff is skipped too —
+   * for a single session the sub-agent stat is cheap.
+   */
+  isSessionLive(sessionId: string): boolean {
+    const ds = this.sessionIndex.get(sessionId);
+    if (!ds) {
+      return false;
+    }
+
+    const now = Date.now();
+    try {
+      if (now - fs.statSync(ds.filePath).mtimeMs < DiscoveryService.ACTIVE_WINDOW_MS) {
+        return true;
+      }
+    } catch {
+      return false; // Transcript is already gone; nothing is writing to it.
+    }
+
+    return now - this.latestSubagentMtime(ds) < DiscoveryService.ACTIVE_WINDOW_MS;
+  }
+
+  /** Drop a session from the index, after its transcript was deleted. */
+  removeSession(sessionId: string): void {
+    this.sessionIndex.delete(sessionId);
+  }
+
+  /**
+   * Re-read metadata for the named sessions only. Used by the file watcher,
+   * which knows exactly which transcript changed and has no reason to walk the
+   * whole index. Ids that aren't indexed are ignored — the caller is expected
+   * to fall back to a full discovery for those.
+   */
+  async refreshSessions(sessionIds: string[]): Promise<void> {
+    const known = sessionIds
+      .map(id => this.sessionIndex.get(id))
+      .filter((ds): ds is DiscoveredSession => ds !== undefined);
+
+    if (known.length === 0) {
+      return;
+    }
+
+    const historyMap = await this.parserService.readHistoryMap();
+
+    for (const ds of known) {
+      const updated = await this.processSessionFile(
+        {
+          sessionId: ds.sessionId,
+          filePath: ds.filePath,
+          projectDir: ds.projectDir,
+          subagentFiles: this.listSubagentFiles(ds.projectDir, ds.sessionId),
+        },
+        historyMap
+      );
+      if (updated) {
+        this.sessionIndex.set(updated.sessionId, updated);
+      }
+    }
+  }
+
+  /**
+   * A session counts as live while something is still being written to it.
+   *
+   * The parent transcript alone is not enough: while a `Task` runs, nothing is
+   * appended to it for as long as the sub-agent works, so a busy session would
+   * look dead. The sub-agent transcript is the only sign of life in that
+   * window, hence the second check — kept behind a coarse age cutoff so the
+   * common case (hundreds of long-finished sessions) costs one `stat` each.
+   */
+  private isSessionActive(ds: DiscoveredSession, now: number): boolean {
+    const age = now - ds.lastModified.getTime();
+    if (age < DiscoveryService.ACTIVE_WINDOW_MS) {
+      return true;
+    }
+    if (age > DiscoveryService.SUBAGENT_LOOKBACK_MS) {
+      return false;
+    }
+    return now - this.latestSubagentMtime(ds) < DiscoveryService.ACTIVE_WINDOW_MS;
+  }
+
+  /** Newest mtime among the session's sub-agent transcripts, 0 when it has none. */
+  private latestSubagentMtime(ds: DiscoveredSession): number {
+    let latest = 0;
+    for (const file of this.listSubagentFiles(ds.projectDir, ds.sessionId)) {
+      try {
+        latest = Math.max(latest, fs.statSync(file).mtimeMs);
+      } catch {
+        // Sub-agent file vanished mid-scan; ignore it.
+      }
+    }
+    return latest;
   }
 
   /**
@@ -167,6 +300,21 @@ export class DiscoveryService {
       };
     }
     return undefined;
+  }
+
+  /**
+   * Every discovered session paired with the transcript files that make it up,
+   * for full-text search.
+   */
+  getSearchTargets(): SearchTarget[] {
+    const targets: SearchTarget[] = [];
+    for (const ds of this.sessionIndex.values()) {
+      targets.push({
+        sessionId: ds.sessionId,
+        files: [ds.filePath, ...ds.subagentFiles],
+      });
+    }
+    return targets;
   }
 
   /**
@@ -185,6 +333,30 @@ export class DiscoveryService {
   }
 
   /**
+   * Re-read the metadata of sessions whose transcript grew since we indexed
+   * them, without rescanning the whole projects tree. A session gets its
+   * `ai-title` only after the first assistant reply, so a session opened
+   * moments ago would otherwise sit in the list under its raw prompt until the
+   * next full discovery.
+   */
+  private async refreshChangedSessions(): Promise<void> {
+    const stale: string[] = [];
+
+    for (const ds of this.sessionIndex.values()) {
+      try {
+        const stat = fs.statSync(ds.filePath);
+        if (stat.mtime.getTime() !== ds.lastModified.getTime()) {
+          stale.push(ds.sessionId);
+        }
+      } catch {
+        // File vanished; leave the cached entry for the next full discovery.
+      }
+    }
+
+    await this.refreshSessions(stale);
+  }
+
+  /**
    * Get list of discovered .claude directories
    */
   getClaudeDirs(): string[] {
@@ -192,6 +364,23 @@ export class DiscoveryService {
   }
 
   // Helper methods
+
+  /**
+   * Sub-agent transcripts live in `<projectDir>/<sessionId>/subagents/*.jsonl`.
+   * They carry no session file of their own, so full-text search has to reach
+   * them through their parent session.
+   */
+  private listSubagentFiles(projDir: string, sessionId: string): string[] {
+    const dir = path.join(projDir, sessionId, 'subagents');
+    try {
+      return fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter(e => e.isFile() && e.name.endsWith('.jsonl'))
+        .map(e => path.join(dir, e.name));
+    } catch {
+      return [];
+    }
+  }
 
   private hasProjectsDir(claudeDir: string): boolean {
     try {
@@ -232,9 +421,12 @@ export class DiscoveryService {
       sessionId: info.sessionId,
       filePath: info.filePath,
       projectDir: info.projectDir,
+      subagentFiles: info.subagentFiles,
       project: '',
+      projectPath: metadata.cwd || '',
       model: metadata.model || 'unknown',
       prompt: '',
+      aiTitle: metadata.aiTitle,
       timestamp: new Date(),
       lastModified: new Date(),
       source: 'scan',
@@ -248,13 +440,18 @@ export class DiscoveryService {
       // ignore
     }
 
-    // Prefer history data for prompt and project
+    // Prefer history data for project and timing. The prompt comes from the
+    // transcript first: history records the raw keystrokes of the turn, while
+    // the transcript keeps the message with the harness's wrappers stripped.
     const historyEntry = historyMap.get(info.sessionId);
     if (historyEntry) {
       ds.source = 'history';
-      ds.prompt = historyEntry.display || metadata.prompt;
+      ds.prompt = metadata.prompt || historyEntry.display;
       if (historyEntry.project) {
         ds.project = this.humanProjectName(historyEntry.project);
+        // History records the absolute cwd; prefer it over the transcript's,
+        // which is only present when the file carries a `cwd` field.
+        ds.projectPath = historyEntry.project;
       }
       ds.timestamp = new Date(historyEntry.timestamp);
     } else {

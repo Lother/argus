@@ -105,7 +105,7 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 
 | Tab | What's inside |
 | --- | --- |
-| **Steps** | Full execution log with text search, multi-tool filter, status filter, sort by time/cost, per-step duration, per-tool icons |
+| **Steps** | Full execution log with text search, multi-tool filter, status filter, sort by time/cost, per-step duration, per-tool icons; user turns and compaction boundaries appear as their own rows |
 | **Analysis** | All findings from the rule engine with severity, evidence, and jump-to-step links |
 | **Cost** | Token & USD breakdown, model attribution, cache-hit ratio, spending charts |
 | **Performance** | Efficiency score, wasted-cost estimate, bottleneck timing |
@@ -117,7 +117,7 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 ### Sidebar & filtering
 
 - Inline session search and model filter (Opus / Sonnet / Haiku)
-- Date presets (1h / 24h / 7d / 30d) plus a custom calendar range picker
+- Date presets (1h / 3h / 6h / 24h / 7d / 30d) plus a custom calendar range picker
 - Group by project, by model, or flat list
 - Sticky headers, tabs, and filters that stay put while content scrolls
 - Native dark-mode integration with the active VS Code theme
@@ -180,7 +180,8 @@ Argus exposes the following VS Code settings:
 ```json
 {
   "argus.scanDepth": 5,
-  "argus.language": "en"
+  "argus.language": "en",
+  "argus.steps.autoExpand": ["text", "thinking", "mcp*"]
 }
 ```
 
@@ -188,6 +189,53 @@ Argus exposes the following VS Code settings:
 | --- | --- | --- |
 | `argus.scanDepth` | `5` | Maximum directory depth when scanning `.claude` directories |
 | `argus.language` | `"en"` | UI / findings language — `"en"` or `"tr"` |
+| `argus.openLocation` | `"active"` | Where a session opens — `"active"` (tab in the current group) or `"beside"` |
+| `argus.searchBar.showModelSelector` | `true` | Show the model selector next to the search box in the Sessions view |
+| `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
+| `argus.steps.autoExpand` | `[]` | Step types that render expanded in the Steps tab |
+| `argus.analysis.realCompactsOnly` | `false` | Report a compaction only where the transcript marks one, instead of inferring it from a token drop |
+
+### User turns in the Steps tab
+
+What the user typed shows up as a `user` step. A turn is often split across
+several content blocks — an `<ide_opened_file>` or `<system-reminder>` wrapper
+glued to the front of the message — so Argus joins the blocks and drops the
+injected ones; a turn that is nothing but injected context produces no step.
+Slash commands collapse from their raw XML back to what was typed (`/context
+all`). Tool results, which the transcript also stores as user events, are not
+user turns and stay attached to the tool call that produced them.
+
+### Compaction detection
+
+A compaction is recorded in the transcript as a user event carrying the hand-off
+summary that replaces the dropped history — there is no assistant message for
+it. Argus turns that event into a `compact` step, so the boundary is visible in
+the Steps tab as a dashed divider row; expanding it shows the summary the next
+steps actually ran on. This is independent of the setting below.
+
+By default the `Context Compaction` finding is inferred from a drop in
+`input + cache_creation` tokens between consecutive steps. That signal is not
+specific: an ordinary prompt-cache rotation — a step whose prompt had to be
+rewritten into the cache, followed by one that reads it back — produces the same
+near-100% drop with no context loss at all, so sessions that were never
+compacted still collect findings.
+
+`argus.analysis.realCompactsOnly` switches the rule to the `isCompactSummary`
+marker Claude Code writes at a real compaction boundary, and measures the drop
+on the full prompt (`input + cache_creation + cache_read`), which is what a
+compaction actually shrinks. Only the Analysis tab changes — re-read detection,
+wasted cost and every other finding behave the same. Leave it off for older
+transcripts written before the marker existed.
+
+### Auto-expanding steps
+
+`argus.steps.autoExpand` takes a list of patterns matched against a step's tool
+name (`Read`, `Bash`, `Edit`, …) or type (`text`, `thinking`). Matching is
+case-insensitive and `*` is a wildcard, so `["*"]` expands every step,
+`["mcp*"]` every MCP tool call, and `["mcp_chromium*"]` a single MCP server —
+repeated underscores collapse, so that last pattern also matches
+`mcp__chromium__navigate`. Steps stay clickable: expanding or collapsing one by
+hand always wins over the setting. Changes apply to already-open sessions.
 
 ## Architecture
 

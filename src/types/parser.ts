@@ -24,8 +24,28 @@ export interface RawEvent {
   toolUseResult?: any;
   sourceToolAssistantUUID?: string;
 
+  // Set on the synthetic user event Claude Code writes when it compacts the
+  // conversation: `message.content` is the hand-off summary that replaces the
+  // dropped history. The only unambiguous compaction marker in a transcript.
+  isCompactSummary?: boolean;
+
+  // Marks a user event the harness generated rather than the person typing —
+  // command caveats and similar bookkeeping.
+  isMeta?: boolean;
+
   // Progress-specific
   data?: any;
+
+  // `type: "attachment"` events. Mostly harness bookkeeping (skill listings,
+  // token reminders), but `queued_command` carries a message the person typed
+  // while a turn was still running — the only record of it in the transcript.
+  attachment?: {
+    type?: string;
+    /** What was typed: a plain string, or content blocks when it has images. */
+    prompt?: any;
+    commandMode?: string;
+    origin?: { kind?: string };
+  };
 
   // System-specific
   subtype?: string;

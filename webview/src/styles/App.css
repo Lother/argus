@@ -26,6 +26,91 @@
   color: var(--text);
 }
 
+.detail-session-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-dim);
+  user-select: text;
+}
+
+.detail-session-id .copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.detail-session-id .copy-btn:hover {
+  background: var(--bg-panel);
+  color: var(--text-bright);
+  opacity: 1;
+}
+
+.detail-session-id .copy-btn.copied {
+  color: #22c55e;
+  opacity: 1;
+}
+
+.detail-view-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Icon + caret: the icon says what folds, the caret which way it goes. */
+.detail-view-toggles .view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 3px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.detail-view-toggles .view-toggle-btn:hover {
+  background: var(--bg-panel);
+  color: var(--text-bright);
+  opacity: 1;
+}
+
+.view-toggle-caret {
+  opacity: 0.8;
+}
+
+/* Last in the meta row and pushed to the far edge, away from everything else. */
+.detail-meta > .delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.detail-meta > .delete-btn:hover {
+  background: var(--bg-panel);
+  color: #ef4444;
+  opacity: 1;
+}
+
 .meta-badge {
   padding: 2px 8px;
   background: var(--bg-panel);
@@ -38,33 +123,6 @@
 
 .meta-dim {
   color: var(--text-dim);
-}
-
-.live-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #ef4444;
-  letter-spacing: 0.5px;
-}
-
-.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ef4444;
-  animation: live-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes live-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.75); }
 }
 
 /* Tab Bar */
@@ -136,8 +194,8 @@
   font-size: 14px;
 }
 
-/* App-level error state. Scoped to avoid colliding with the generic
-   `.error` severity modifier used by finding cards. */
+/* Fatal error screen. Deliberately NOT `.error` — that bare class collides
+   with severity modifiers like `.finding-card.error` in the tabs. */
 .app-error {
   display: flex;
   align-items: center;

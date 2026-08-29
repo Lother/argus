@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Step, Subagent, Finding } from '../types/session';
-import { t, locale } from '../i18n';
+import { Step, Subagent, Finding, TokenUsage, spawnKey } from '../types/session';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
+import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
 import './StepsTab.css';
 
@@ -11,6 +11,19 @@ interface Props {
   subagents: Subagent[];
   findings: Finding[];
   highlightStep: number | null;
+  // Sort order from settings (argus.steps.sortOrder); also what "Clear
+  // filters" resets to. Defaults to 'newest' for callers without a config.
+  defaultSortMode?: string;
+  // Patterns from settings (argus.steps.autoExpand) — steps whose tool name or
+  // type matches start expanded instead of collapsed.
+  autoExpand?: string[];
+  // Fold the search/filter bar away (the header's search toggle). The filters
+  // themselves keep their values, so a hidden bar can still be narrowing the
+  // list — the "13/55" tab label is what gives that away.
+  hideControls?: boolean;
+  // How many steps survive the current search/filters, reported up so the tab
+  // header can show "Steps (13/55)". null while the tab is unmounted.
+  onFilteredCountChange?: (count: number | null) => void;
 }
 
 /* ── SVG icons ── */
@@ -98,6 +111,26 @@ const StepIcon = ({ step }: { step: Step }) => {
           <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
         </svg>
       );
+    case 'user':
+      return (
+        <svg className="step-icon step-icon-user" {...stepIconProps} stroke="currentColor">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+      );
+    case 'attachment':
+      // Paperclip: a step that exists only to carry what the message brought.
+      return (
+        <svg className="step-icon step-icon-attachment" {...stepIconProps} stroke="currentColor">
+          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      );
+    case 'compact':
+      // Arrows folding inward — the history collapsing into a summary.
+      return (
+        <svg className="step-icon step-icon-compact" {...stepIconProps} stroke="currentColor">
+          <path d="M4 9h6V3"/><path d="M20 9h-6V3"/><path d="M4 15h6v6"/><path d="M20 15h-6v6"/>
+        </svg>
+      );
     default:
       return (
         <svg className="step-icon step-icon-default" {...stepIconProps} stroke="currentColor">
@@ -125,6 +158,29 @@ const SortIcon = () => (
     <path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/>
   </svg>
 );
+
+/* ── Token usage ── */
+// Rendered into the pretty/raw toolbar of whichever renderer the step uses,
+// so the counts sit on one line with the controls instead of trailing the
+// expanded body.
+const StepTokenUsage = ({ usage }: { usage: TokenUsage }) => {
+  const items: [string, number, string][] = [
+    ['in', usage.input_tokens, 'Input tokens'],
+    ['out', usage.output_tokens, 'Output tokens'],
+    ['cache r', usage.cache_read_input_tokens, 'Cache read tokens'],
+    ['cache w', usage.cache_creation_input_tokens, 'Cache creation tokens'],
+  ];
+  return (
+    <span className="step-usage">
+      {items.map(([label, value, title]) => (
+        <span key={label} className="step-usage-item" title={title}>
+          <span className="step-usage-label">{label}</span>
+          <span className="step-usage-value">{(value ?? 0).toLocaleString()}</span>
+        </span>
+      ))}
+    </span>
+  );
+};
 
 /* ── Dropdown component ── */
 interface DropdownItem {
@@ -193,26 +249,31 @@ const Dropdown = ({ id, icon, label, items, selected, onSelect, isActive, multiS
 };
 
 /* ── Sort labels ── */
-// Keys of this map are the persisted sort-mode values — they must stay in
-// English; only the caption they resolve to is localized.
-const SORT_LABEL_KEYS: Record<string, string> = {
-  newest: 'steps.sortNewest',
-  oldest: 'steps.sortOldest',
-  'cost-desc': 'steps.sortCostDesc',
-  'cost-asc': 'steps.sortCostAsc',
+const SORT_LABELS: Record<string, string> = {
+  newest: 'Newest',
+  oldest: 'Oldest',
+  'cost-desc': 'Cost ↓',
+  'cost-asc': 'Cost ↑',
 };
 
-// Same deal for the status filter values.
-const STATUS_LABEL_KEYS: Record<string, string> = {
-  success: 'steps.statusSuccess',
-  failed: 'steps.statusFailed',
-  issues: 'steps.statusIssues',
-};
+/* ── auto-expand patterns ── */
+// MCP tools arrive as `mcp__server__tool`; collapsing underscore runs lets a
+// pattern be written either way (`mcp_chromium*` or `mcp__chromium*`).
+const normalizeToolKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/_+/g, '_');
 
-// `thinking` / `text` are `step.type` values; only the caption is localized.
-const STEP_TYPE_LABEL_KEYS: Record<string, string> = {
-  thinking: 'steps.typeThinking',
-  text: 'steps.typeText',
+// Compiles argus.steps.autoExpand into a single predicate. `*` is the only
+// wildcard; everything else is matched literally over the whole name.
+const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
+  const regexes = patterns
+    .map(normalizeToolKey)
+    .filter(Boolean)
+    .map(p => new RegExp(`^${p.replace(/[.*+?^${}()|[\]\\]/g, m => (m === '*' ? '.*' : `\\${m}`))}$`));
+  if (regexes.length === 0) return () => false;
+  return (key: string) => {
+    const k = normalizeToolKey(key);
+    return regexes.some(re => re.test(k));
+  };
 };
 
 /* ── Main component ── */
@@ -221,14 +282,43 @@ const STEP_TYPE_LABEL_KEYS: Record<string, string> = {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
-  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange }: Props) => {
+  // Steps the user has clicked, i.e. the ones whose state differs from the
+  // default that autoExpand gives them. Storing the flips rather than the
+  // expanded set means steps appended by a live session pick the setting up
+  // on arrival, and a changed setting doesn't strand stale expansions.
+  const [toggledSteps, setToggledSteps] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [toolFilter, setToolFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortMode, setSortMode] = useState('newest');
+  const [sortMode, setSortMode] = useState(defaultSortMode);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
+
+  // The settings message normally arrives before the session data, so the
+  // state above is already correct. If it lands late, adopt it — unless the
+  // user has meanwhile picked a sort order by hand.
+  const sortTouched = useRef(false);
+  useEffect(() => {
+    if (!sortTouched.current) setSortMode(defaultSortMode);
+  }, [defaultSortMode]);
+
+  const selectSortMode = useCallback((mode: string) => {
+    sortTouched.current = true;
+    setSortMode(mode);
+  }, []);
+
+  const matchesAutoExpand = useMemo(() => compileAutoExpand(autoExpand), [autoExpand]);
+
+  const isAutoExpanded = useCallback(
+    (step: Step) => matchesAutoExpand(step.toolName || step.type),
+    [matchesAutoExpand]
+  );
+
+  const isStepExpanded = useCallback(
+    (step: Step) => isAutoExpanded(step) !== toggledSteps.has(keyOf(step)),
+    [isAutoExpanded, toggledSteps]
+  );
 
   // agentId → Subagent for quick lookup
   const subagentById = useMemo(() => {
@@ -237,18 +327,36 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     return m;
   }, [subagents]);
 
-  // main step local index → agents spawned there (for the collapse toggle on
-  // Task tool_use rows)
+  // spawnKey(parentAgentId, local step index) → agents spawned there (for the
+  // collapse toggle on Task tool_use rows). Keyed by owning agent too, since a
+  // Task row can live inside another agent's transcript.
   const agentsByParent = useMemo(() => {
-    const m = new Map<number, Subagent[]>();
+    const m = new Map<string, Subagent[]>();
     for (const s of subagents) {
       if (typeof s.parentStepIndex !== 'number') continue;
-      const arr = m.get(s.parentStepIndex) ?? [];
+      const k = spawnKey(s.parentAgentId, s.parentStepIndex);
+      const arr = m.get(k) ?? [];
       arr.push(s);
-      m.set(s.parentStepIndex, arr);
+      m.set(k, arr);
     }
     return m;
   }, [subagents]);
+
+  // agentId → itself + all ancestors, so collapsing an agent also hides the
+  // agents it spawned.
+  const agentChain = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of subagents) {
+      const chain: string[] = [];
+      let cur: Subagent | undefined = s;
+      while (cur && !chain.includes(cur.agentId)) {
+        chain.push(cur.agentId);
+        cur = cur.parentAgentId ? subagentById.get(cur.parentAgentId) : undefined;
+      }
+      m.set(s.agentId, chain);
+    }
+    return m;
+  }, [subagents, subagentById]);
 
   const toggleAgent = useCallback((agentId: string) => {
     setCollapsedAgents(prev => {
@@ -284,12 +392,15 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
   // out of the rendered list.
   useEffect(() => {
     if (highlightStep !== null) {
-      setExpandedSteps(prev => {
-        const newSet = new Set(prev);
-        newSet.add(highlightStep);
-        return newSet;
-      });
       const target = steps.find(s => keyOf(s) === highlightStep);
+      // Force the step open: drop the flip if it is auto-expanded already,
+      // add one otherwise.
+      setToggledSteps(prev => {
+        const next = new Set(prev);
+        if (target && isAutoExpanded(target)) next.delete(highlightStep);
+        else next.add(highlightStep);
+        return next;
+      });
       if (target?.agentId && collapsedAgents.has(target.agentId)) {
         setCollapsedAgents(prev => {
           const next = new Set(prev);
@@ -297,23 +408,28 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
           return next;
         });
       }
+      // Align the step's top edge with the top of the scroll area rather than
+      // centring it — an expanded step (a compaction summary especially) can be
+      // taller than the viewport, and centring would land mid-text.
       setTimeout(() => {
         const element = document.querySelector('.step-item.highlight');
         if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 100);
     }
-  }, [highlightStep, steps, collapsedAgents]);
+  }, [highlightStep, steps, collapsedAgents, isAutoExpanded]);
 
   const toggleStep = (index: number) => {
-    const newSet = new Set(expandedSteps);
-    if (newSet.has(index)) {
-      newSet.delete(index);
-    } else {
-      newSet.add(index);
-    }
-    setExpandedSteps(newSet);
+    setToggledSteps(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
   };
 
   // Map findings to globalIndex of the matching main-session steps. The
@@ -326,7 +442,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     }
     const map = new Map<number, Finding[]>();
     findings.forEach(f => {
-      f.steps?.forEach(idx => {
+      f.affectedSteps?.forEach(idx => {
         const gi = mainByIndex.get(idx);
         if (gi === undefined) return;
         if (!map.has(gi)) map.set(gi, []);
@@ -363,8 +479,14 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     const tools: DropdownItem[] = [];
 
     toolCounts.forEach((count, key) => {
-      if (STEP_TYPE_LABEL_KEYS[key]) {
-        types.push({ value: key, label: t(STEP_TYPE_LABEL_KEYS[key]), count });
+      if (
+        key === 'thinking' ||
+        key === 'text' ||
+        key === 'compact' ||
+        key === 'user' ||
+        key === 'attachment'
+      ) {
+        types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
       } else {
         tools.push({ value: key, label: key, count });
       }
@@ -374,7 +496,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     tools.sort((a, b) => a.label.localeCompare(b.label));
 
     const items: (DropdownItem | 'separator')[] = [
-      { value: 'all', label: t('steps.filterAllSteps'), count: steps.length },
+      { value: 'all', label: 'All Steps', count: steps.length },
     ];
     if (types.length > 0) {
       items.push('separator', ...types);
@@ -387,20 +509,20 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
 
   // Build status dropdown items
   const statusItems: (DropdownItem | 'separator')[] = useMemo(() => [
-    { value: 'all', label: t('steps.statusAll'), count: steps.length },
+    { value: 'all', label: 'All', count: steps.length },
     'separator',
-    { value: 'success', label: t('steps.statusSuccess'), count: statusCounts.success },
-    { value: 'failed', label: t('steps.statusFailed'), count: statusCounts.failed },
-    { value: 'issues', label: t('steps.statusIssues'), count: statusCounts.issues },
+    { value: 'success', label: 'Success', count: statusCounts.success },
+    { value: 'failed', label: 'Failed', count: statusCounts.failed },
+    { value: 'issues', label: 'Has Issues', count: statusCounts.issues },
   ], [steps.length, statusCounts]);
 
   // Build sort dropdown items
   const sortItems: (DropdownItem | 'separator')[] = [
-    { value: 'newest', label: t('steps.sortNewestFirst') },
-    { value: 'oldest', label: t('steps.sortOldestFirst') },
+    { value: 'newest', label: 'Newest First' },
+    { value: 'oldest', label: 'Oldest First' },
     'separator',
-    { value: 'cost-desc', label: t('steps.sortCostHighLow') },
-    { value: 'cost-asc', label: t('steps.sortCostLowHigh') },
+    { value: 'cost-desc', label: 'Cost: High → Low' },
+    { value: 'cost-asc', label: 'Cost: Low → High' },
   ];
 
   // Filtered and sorted steps
@@ -431,9 +553,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     if (statusFilter === 'failed') result = result.filter(s => s.toolSuccess === false);
     if (statusFilter === 'issues') result = result.filter(s => stepFindings.has(keyOf(s)));
 
-    // Hide steps whose owning agent the user collapsed
+    // Hide steps whose owning agent — or any of its ancestors — is collapsed
     if (collapsedAgents.size > 0) {
-      result = result.filter(s => !s.agentId || !collapsedAgents.has(s.agentId));
+      result = result.filter(s => {
+        if (!s.agentId) return true;
+        const chain = agentChain.get(s.agentId) ?? [s.agentId];
+        return !chain.some(id => collapsedAgents.has(id));
+      });
     }
 
     // Sorting — keyOf preserves chronological order for both main and agent
@@ -446,7 +572,15 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     }
 
     return result;
-  }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents]);
+  }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents, agentChain]);
+
+  // Publish the filtered count for the tab header. Filters live only as long as
+  // this component, so unmounting resets the header back to the plain total.
+  useEffect(() => {
+    onFilteredCountChange?.(filteredSteps.length);
+  }, [filteredSteps.length, onFilteredCountChange]);
+
+  useEffect(() => () => onFilteredCountChange?.(null), [onFilteredCountChange]);
 
   // Calculate duration for each step (time to next step)
   const stepDurations = useMemo(() => {
@@ -467,167 +601,195 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
   const formatTime = (timestamp?: string | Date) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
-    return date.toLocaleTimeString(locale, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
+    return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
   const formatDuration = (ms: number): string => {
-    if (ms < 1000) return t('fmt.durationMs', { value: ms });
+    if (ms < 1000) return `${ms}ms`;
     const sec = ms / 1000;
-    if (sec < 60) return t('fmt.durationSec', { value: sec.toFixed(1) });
+    if (sec < 60) return `${sec.toFixed(1)}s`;
     const min = Math.floor(sec / 60);
     const rem = Math.round(sec % 60);
-    return t('fmt.durationMinSec', { minutes: min, seconds: rem });
+    return `${min}m ${rem}s`;
   };
 
-  const getStepSummary = (step: Step): string => {
-    if (!step.toolName || !step.toolInput) return '';
+  // Subtitle shown next to the tool name. `mono` marks payload text (paths,
+  // patterns, raw commands) so prose descriptions can render in the UI font.
+  const getStepSummary = (step: Step): { text: string; mono: boolean } | null => {
+    if (step.type === 'compact') {
+      return { text: 'context compacted — history replaced by a summary', mono: false };
+    }
+    // First non-empty line of the prompt/reply, so a turn is recognisable
+    // while collapsed.
+    if (step.type === 'user' || step.type === 'text' || step.type === 'attachment') {
+      const first = (step.content || '')
+        .split('\n')
+        .find(line => line.trim() !== '');
+      if (first) return { text: first.trim(), mono: false };
+      // A pasted screenshot with no caption: the row would otherwise read as
+      // an empty turn.
+      const count = step.attachments?.length ?? 0;
+      if (count > 0) {
+        return { text: count === 1 ? '1 attachment' : `${count} attachments`, mono: false };
+      }
+      return null;
+    }
+    if (!step.toolName || !step.toolInput) return null;
+
+    const input = step.toolInput as any;
+    const description =
+      typeof input.description === 'string' ? input.description.trim() : '';
 
     try {
       switch (step.toolName) {
         case 'Read':
-          return step.toolInput.file_path || '';
         case 'Write':
-          return step.toolInput.file_path || '';
         case 'Edit':
-          return step.toolInput.file_path || '';
+        case 'MultiEdit':
+          return input.file_path ? { text: input.file_path, mono: true } : null;
         case 'Grep':
         case 'Glob':
-          return step.toolInput.path
-            ? t('steps.summaryPatternIn', {
-                pattern: step.toolInput.pattern,
-                path: step.toolInput.path,
-              })
-            : t('steps.summaryPattern', { pattern: step.toolInput.pattern });
+          return { text: `"${input.pattern}"${input.path ? ` in ${input.path}` : ''}`, mono: true };
         case 'Bash':
-          // Full command preserved — overflow handled by CSS ellipsis on .step-summary.
-          return step.toolInput.command || '';
+          // Claude writes a one-line description for every command it runs; it
+          // reads better here than the command, which the expanded body shows
+          // verbatim anyway. Commands without one fall back to the text itself.
+          return description
+            ? { text: description, mono: false }
+            : { text: input.command || '', mono: true };
+        case 'Task':
         case 'Agent':
-          return step.toolInput.description || step.toolInput.prompt || '';
-        default:
-          return '';
+          return { text: description || input.prompt || '', mono: false };
+        default: {
+          if (description) return { text: description, mono: false };
+          // Unknown tools — MCP ones above all — carry no description, so fold
+          // their scalar arguments into `key=value` pairs. Without this the row
+          // would show nothing but the tool name, and a run of MCP calls would
+          // be indistinguishable from one another.
+          const parts: string[] = [];
+          for (const [key, value] of Object.entries(input)) {
+            if (typeof value === 'string') {
+              const v = value.replace(/\s+/g, ' ').trim();
+              if (v) parts.push(`${key}=${v.length > 80 ? `${v.slice(0, 80)}…` : v}`);
+            } else if (typeof value === 'number' || typeof value === 'boolean') {
+              parts.push(`${key}=${value}`);
+            }
+            if (parts.length === 3) break;
+          }
+          return parts.length ? { text: parts.join(' · '), mono: true } : null;
+        }
       }
     } catch {
-      return '';
+      return null;
     }
   };
 
-  const toolLabel =
-    toolFilter.size === 0
-      ? t('steps.filterTool')
-      : toolFilter.size === 1
-        ? [...toolFilter][0]
-        : t('steps.filterToolCount', { count: toolFilter.size });
-  const statusLabel =
-    statusFilter === 'all' || !STATUS_LABEL_KEYS[statusFilter]
-      ? t('steps.filterStatus')
-      : t(STATUS_LABEL_KEYS[statusFilter]);
-  const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== 'newest';
+  const toolLabel = toolFilter.size === 0 ? 'Tool' : toolFilter.size === 1 ? [...toolFilter][0] : `${toolFilter.size} tools`;
+  const statusLabel = statusFilter === 'all' ? 'Status' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
+  const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== defaultSortMode;
 
   const clearAllFilters = () => {
     setSearchQuery('');
     setToolFilter(new Set());
     setStatusFilter('all');
-    setSortMode('newest');
+    setSortMode(defaultSortMode);
     setOpenDropdown(null);
   };
 
   return (
     <div className="steps-tab">
-      <div className="steps-controls">
-        <div className="steps-filter-bar" onClick={e => e.stopPropagation()}>
-          <SearchIcon />
-          <input
-            className="steps-search-input"
-            type="text"
-            placeholder={t('steps.searchPlaceholder')}
-            spellCheck={false}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="steps-search-clear" onClick={() => setSearchQuery('')}>×</button>
-          )}
+      {!hideControls && (
+        <div className="steps-controls">
+          <div className="steps-filter-bar" onClick={e => e.stopPropagation()}>
+            <SearchIcon />
+            <input
+              className="steps-search-input"
+              type="text"
+              placeholder="Search steps..."
+              spellCheck={false}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="steps-search-clear" onClick={() => setSearchQuery('')}>×</button>
+            )}
 
-          <div className="steps-divider" />
-          <Dropdown
-            id="tool"
-            icon={<FilterIcon />}
-            label={toolLabel}
-            items={toolItems}
-            selected={toolFilter.size === 0 ? 'all' : toolFilter}
-            onSelect={toggleToolFilter}
-            isActive={toolFilter.size > 0}
-            multiSelect
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-          />
+            <div className="steps-divider" />
+            <Dropdown
+              id="tool"
+              icon={<FilterIcon />}
+              label={toolLabel}
+              items={toolItems}
+              selected={toolFilter.size === 0 ? 'all' : toolFilter}
+              onSelect={toggleToolFilter}
+              isActive={toolFilter.size > 0}
+              multiSelect
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
 
-          <div className="steps-divider" />
-          <Dropdown
-            id="status"
-            icon={<StatusIcon />}
-            label={statusLabel}
-            items={statusItems}
-            selected={statusFilter}
-            onSelect={setStatusFilter}
-            isActive={statusFilter !== 'all'}
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-          />
+            <div className="steps-divider" />
+            <Dropdown
+              id="status"
+              icon={<StatusIcon />}
+              label={statusLabel}
+              items={statusItems}
+              selected={statusFilter}
+              onSelect={setStatusFilter}
+              isActive={statusFilter !== 'all'}
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
 
-          <div className="steps-divider" />
-          <Dropdown
-            id="sort"
-            icon={<SortIcon />}
-            label={t(SORT_LABEL_KEYS[sortMode] ?? 'steps.sortNewest')}
-            items={sortItems}
-            selected={sortMode}
-            onSelect={setSortMode}
-            isActive={sortMode !== 'newest'}
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-          />
+            <div className="steps-divider" />
+            <Dropdown
+              id="sort"
+              icon={<SortIcon />}
+              label={SORT_LABELS[sortMode]}
+              items={sortItems}
+              selected={sortMode}
+              onSelect={selectSortMode}
+              isActive={sortMode !== defaultSortMode}
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
 
-          {hasActiveFilters && (
-            <>
-              <div className="steps-divider" />
-              <button
-                className="steps-clear-filters"
-                onClick={clearAllFilters}
-                title={t('steps.clearFiltersTitle')}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-                </svg>
-                <span>{t('steps.clear')}</span>
-              </button>
-            </>
-          )}
+            {hasActiveFilters && (
+              <>
+                <div className="steps-divider" />
+                <button className="steps-clear-filters" onClick={clearAllFilters} title="Clear all filters">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                  </svg>
+                  <span>Clear</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
-
-        <div className="steps-filter-meta">
-          <span className="steps-count">
-            {t('steps.showing', { shown: filteredSteps.length, total: steps.length })}
-          </span>
-        </div>
-      </div>
+      )}
 
       <div className="steps-scroll">
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
         {filteredSteps.map((step, i) => {
           const k = keyOf(step);
-          const isExpanded = expandedSteps.has(k);
+          const summary = getStepSummary(step);
+          const isExpanded = isStepExpanded(step);
+          const hasToolBody = !!(step.toolInput || step.toolResult);
+          const hasContentBody =
+            (step.type === 'text' ||
+              step.type === 'thinking' ||
+              step.type === 'compact' ||
+              step.type === 'user') && !!step.content;
+          const usageNode = step.usage ? <StepTokenUsage usage={step.usage} /> : null;
           const hasIssues = stepFindings.has(k);
           const isHighlighted = highlightStep === k;
           const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;
+          // A Task row may itself sit inside an agent transcript, so look the
+          // spawned agents up by (owning agent, local step index).
           const linkedAgents =
-            (step.toolName === 'Task' || step.toolName === 'Agent') && !step.agentId
-              ? agentsByParent.get(step.index)
+            step.toolName === 'Task' || step.toolName === 'Agent'
+              ? agentsByParent.get(spawnKey(step.agentId, step.index))
               : undefined;
           const allCollapsed = linkedAgents
             ? linkedAgents.every(a => collapsedAgents.has(a.agentId))
@@ -642,16 +804,22 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
             isAgent && (!prev || prev.agentId !== step.agentId);
           const isLastAgentInRun =
             isAgent && (!next || next.agentId !== step.agentId);
+          // Nesting level drives the indent and connector offsets in CSS:
+          // 0 = main session, 1 = agent, 2 = agent spawned by an agent.
+          const depth = step.agentId ? (agentChain.get(step.agentId)?.length ?? 1) : 0;
 
           return (
             <div
               key={k}
+              style={{ '--depth': String(depth) } as React.CSSProperties}
               className={[
                 'step-item',
                 isExpanded ? 'expanded' : '',
                 isHighlighted ? 'highlight' : '',
                 hasIssues ? 'has-issues' : '',
                 step.toolSuccess === false ? 'step-item-error' : '',
+                step.type === 'compact' ? 'step-item-compact' : '',
+                step.type === 'user' ? 'step-item-user' : '',
                 isAgent ? 'step-item-agent' : '',
                 linkedAgents && !allCollapsed ? 'step-item-task' : '',
                 isFirstAgentInRun ? 'step-agent-first' : '',
@@ -659,51 +827,58 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
               ].filter(Boolean).join(' ')}
             >
               <button className="step-header" onClick={() => toggleStep(k)}>
+                {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
                 <div className="step-left">
                   <StepIcon step={step} />
                   <span className="step-index">#{k}</span>
                   <span className="step-time">{formatTime(step.timestamp)}</span>
                   <span className="step-type">{step.toolName || step.type}</span>
                   {ownerAgent && (
-                    <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
-                      {ownerAgent.agentType || t('steps.agentFallback')}
-                    </span>
+                    <>
+                      <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
+                        {ownerAgent.agentType || 'agent'}
+                      </span>
+                      {/* Transcript of this agent lives in
+                          <session>/subagents/agent-<agentId>.jsonl — show the id
+                          so a row can be traced back to its own session file. */}
+                      <span
+                        className="step-agent-id"
+                        title={`Agent session: agent-${ownerAgent.agentId}.jsonl`}
+                      >
+                        {ownerAgent.agentId}
+                      </span>
+                    </>
                   )}
                   {linkedAgents && linkedAgents.length > 0 && (
-                    <button
-                      className={`step-task-toggle${allCollapsed ? ' collapsed' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        for (const a of linkedAgents) toggleAgent(a.agentId);
-                      }}
-                      title={t(allCollapsed ? 'steps.showAgentSteps' : 'steps.hideAgentSteps')}
-                    >
-                      {allCollapsed ? '▸' : '▾'}{' '}
-                      {t('steps.agentStepCount', {
-                        count: linkedAgents.reduce((acc, a) => acc + a.stepCount, 0),
-                      })}
-                    </button>
-                  )}
-                  {step.toolSuccess === true && <span className="step-success">✓</span>}
-                  {getStepSummary(step) && (
-                    <span className="step-summary">{getStepSummary(step)}</span>
-                  )}
-                  {step.toolSuccess === false && (
-                    <span className="step-failed" title={t('steps.toolErrorTitle')}>
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden
+                    <>
+                      {/* The spawning Task row carries the id(s) of the agent
+                          session(s) it started, mirroring the agent rows below. */}
+                      {linkedAgents.map(a => (
+                        <span
+                          key={a.agentId}
+                          className="step-agent-id"
+                          title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                        >
+                          {a.agentId}
+                        </span>
+                      ))}
+                      <button
+                        className={`step-task-toggle${allCollapsed ? ' collapsed' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          for (const a of linkedAgents) toggleAgent(a.agentId);
+                        }}
+                        title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
                       >
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="15" y1="9" x2="9" y2="15" />
-                        <line x1="9" y1="9" x2="15" y2="15" />
-                      </svg>
-                      <span className="step-failed-label">{t('steps.errorLabel')}</span>
+                        {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
+                      </button>
+                    </>
+                  )}
+                  {/* Success/error state is carried by the row colouring alone
+                      (.step-item-error) — no extra tick or badge here. */}
+                  {summary && summary.text && (
+                    <span className={`step-summary${summary.mono ? ' mono' : ''}`}>
+                      {summary.text}
                     </span>
                   )}
                 </div>
@@ -713,7 +888,22 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                       {formatDuration(stepDurations.get(k)!)}
                     </span>
                   )}
-                  <span className="step-cost">${step.cost.toFixed(4)}</span>
+                  {/* Only the step a response is charged to carries a cost;
+                      its siblings and user/compact steps carry 0, and a literal
+                      $0.0000 there reads as "this was free" rather than
+                      "billed elsewhere". */}
+                  {step.cost > 0 && (
+                    <span
+                      className="step-cost"
+                      title={
+                        step.costIsEstimate
+                          ? `Estimated — no exact price for model ${step.model ?? 'unknown'}`
+                          : undefined
+                      }
+                    >
+                      {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
+                    </span>
+                  )}
                   <span className="step-expand">▶</span>
                 </div>
               </button>
@@ -737,7 +927,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                         fallback={(err) => (
                           <div className="renderer-fallback">
                             <div className="renderer-fallback-header">
-                              {t('steps.rendererCrashedData', { message: err.message })}
+                              Renderer crashed — showing raw data. ({err.message})
                             </div>
                             {step.toolInput !== undefined && (
                               <pre className="detail-code">{JSON.stringify(step.toolInput, null, 2)}</pre>
@@ -748,38 +938,42 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                           </div>
                         )}
                       >
-                        <ToolRenderer step={step} />
+                        <ToolRenderer step={step} meta={usageNode} />
                       </RendererErrorBoundary>
                     </div>
                   )}
 
-                  {(step.type === 'text' || step.type === 'thinking') && step.content && (
+                  {hasContentBody && (
                     <div className="detail-section">
                       <RendererErrorBoundary
                         fallback={(err) => (
                           <div className="renderer-fallback">
                             <div className="renderer-fallback-header">
-                              {t('steps.rendererCrashedText', { message: err.message })}
+                              Renderer crashed — showing raw text. ({err.message})
                             </div>
                             <pre className="detail-text">{step.content}</pre>
                           </div>
                         )}
                       >
-                        <ContentRenderer step={step} />
+                        <ContentRenderer step={step} meta={usageNode} />
                       </RendererErrorBoundary>
                     </div>
                   )}
 
-                  {step.usage && (
-                    <div className="detail-section">
-                      <div className="detail-label">{t('steps.tokenUsage')}</div>
-                      <div className="token-grid">
-                        <div>{t('steps.tokenInput')}: <strong>{step.usage.input_tokens}</strong></div>
-                        <div>{t('steps.tokenOutput')}: <strong>{step.usage.output_tokens}</strong></div>
-                        <div>{t('steps.tokenCacheRead')}: <strong>{step.usage.cache_read_input_tokens}</strong></div>
-                        <div>{t('steps.tokenCacheCreate')}: <strong>{step.usage.cache_creation_input_tokens}</strong></div>
-                      </div>
-                    </div>
+                  {/* Steps with neither renderer (a tool call with no payload,
+                      an empty text block) still have somewhere to show their
+                      token counts. */}
+                  {usageNode && !hasToolBody && !hasContentBody && (
+                    <div className="step-usage-standalone">{usageNode}</div>
+                  )}
+
+                  {/* Blobs the message carried — a pasted screenshot, a file
+                      from an event the timeline otherwise skips. Tool steps
+                      are not here: their attachments belong to the tool
+                      renderer, which shows them in the pretty view and the raw
+                      base64 in the other two. */}
+                  {!hasToolBody && step.attachments && step.attachments.length > 0 && (
+                    <Attachments attachments={step.attachments} agentId={step.agentId} />
                   )}
                 </div>
               )}
