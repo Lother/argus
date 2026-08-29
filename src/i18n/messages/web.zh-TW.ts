@@ -305,7 +305,7 @@ export const webZhTW: Messages = {
   'toolRenderer.lines': '{lines} 行',
   'toolRenderer.fromLine': '自第 {offset} 行起',
   'toolRenderer.limit': '上限 {limit}',
-  'toolRenderer.createBadge': '新建',
+  'toolRenderer.createBadge': 'CREATE',
   'toolRenderer.writeMeta': '{lines} 行 · {size}',
   'toolRenderer.editCountOne': '{count} 項編輯',
   'toolRenderer.editCountOther': '{count} 項編輯',

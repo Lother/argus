@@ -1,4 +1,4 @@
-import { Step, AnalysisResult } from '../types/session';
+import { Step, AnalysisResult, Subagent } from '../types/session';
 import { calculateCostBreakdown } from '../../../src/types/pricing';
 import { t } from '../i18n';
 import { Pie, Doughnut } from 'react-chartjs-2';
@@ -13,14 +13,19 @@ import './CostTab.css';
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface Props {
+  /** Main-session steps plus sub-agent steps (flattened), so the breakdown covers the whole session. */
   steps: Step[];
   analysis?: AnalysisResult;
+  subagents: Subagent[];
   sessionTotalCost: number;
   onGoToStep: (index: number) => void;
 }
 
-const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
-  const totalCost = analysis?.totalCost ?? sessionTotalCost;
+const CostTab = ({ steps, analysis, subagents, sessionTotalCost, onGoToStep }: Props) => {
+  // Same scope as the tab label and the Analysis tab: main session + sub-agents.
+  const subagentCost = subagents.reduce((acc, s) => acc + (s.totalCost || 0), 0);
+  const subagentWasted = subagents.reduce((acc, s) => acc + (s.analysis?.wastedCost ?? 0), 0);
+  const totalCost = (analysis?.totalCost ?? sessionTotalCost) + subagentCost;
 
   // Calculate wasted cost if not in analysis
   let calculatedWastedCost = 0;
@@ -62,7 +67,7 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
     });
   }
 
-  const wastedCost = calculatedWastedCost;
+  const wastedCost = calculatedWastedCost + subagentWasted;
   const efficiency = analysis?.efficiency ?? (totalCost > 0 ? ((totalCost - wastedCost) / totalCost) * 100 : 100);
 
   // Cost by step type. `step.cost` is already priced per model by the parser
@@ -77,7 +82,7 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
     }
     costByType[key].count++;
     costByType[key].cost += step.cost || 0;
-    costByType[key].steps.push(step.index);
+    costByType[key].steps.push(step.globalIndex ?? step.index);
   });
 
   const sortedTypes = Object.entries(costByType).sort((a, b) => b[1].cost - a[1].cost);
@@ -89,7 +94,7 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
   const countedMessages = new Set<string>();
   steps.forEach(step => {
     if (!step.usage) return;
-    const key = step.messageId || `step-${step.index}`;
+    const key = step.messageId || `step-${step.globalIndex ?? step.index}`;
     if (countedMessages.has(key)) return;
     countedMessages.add(key);
 

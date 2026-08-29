@@ -331,8 +331,9 @@ function App() {
         )}
         {activeTab === 'cost' && (
           <CostTab
-            steps={session.steps}
+            steps={flatSteps}
             analysis={session.analysis}
+            subagents={session.subagents}
             sessionTotalCost={session.totalCost}
             onGoToStep={goToStep}
           />
