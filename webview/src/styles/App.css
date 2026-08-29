@@ -136,8 +136,9 @@
   font-size: 14px;
 }
 
-/* Error */
-.error {
+/* App-level error state. Scoped to avoid colliding with the generic
+   `.error` severity modifier used by finding cards. */
+.app-error {
   display: flex;
   align-items: center;
   justify-content: center;

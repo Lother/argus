@@ -69,7 +69,7 @@ function App() {
 
   if (!session) {
     return (
-      <div className="error">
+      <div className="app-error">
         <p>{t('app.noData')}</p>
       </div>
     );
