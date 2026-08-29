@@ -8,6 +8,7 @@ import {
   ContextMetrics,
   SessionDetail,
 } from '../types/models';
+import { t } from '../i18n/vscode';
 
 export interface AnalysisOptions {
   /**
@@ -270,8 +271,8 @@ class DuplicateReadRule implements AnalysisRule {
       findings.push({
         rule: 'duplicate_read',
         severity: 'warning',
-        title: 'Duplicate File Reads',
-        description: `The following files were read multiple times: ${duplicates.join(', ')}`,
+        title: t('analyzer.duplicateReads.title'),
+        description: t('analyzer.duplicateReads.description', { files: duplicates.join(', ') }),
         steps: allSteps,
         wastedCost: totalWasted,
         details: duplicates,
@@ -317,8 +318,8 @@ class UnusedReadRule implements AnalysisRule {
       {
         rule: 'unused_read',
         severity: 'info',
-        title: 'Potentially Unused Reads',
-        description: `Found ${unusedReads.length} file reads that may not have been used`,
+        title: t('analyzer.unusedReads.title'),
+        description: t('analyzer.unusedReads.description', { count: unusedReads.length }),
         steps: unusedReads,
         wastedCost,
       },
@@ -357,8 +358,11 @@ class RetryLoopRule implements AnalysisRule {
         findings.push({
           rule: 'retry_loop',
           severity: 'error',
-          title: 'Retry Loop Detected',
-          description: `Tool "${step1.toolName}" failed ${failCount} times in a row`,
+          title: t('analyzer.retryLoop.title'),
+          description: t('analyzer.retryLoop.description', {
+            tool: step1.toolName ?? '',
+            count: failCount,
+          }),
           steps: failSteps,
           wastedCost: totalCost,
           category: 'loop',
@@ -389,8 +393,8 @@ class FailedToolRule implements AnalysisRule {
       {
         rule: 'failed_tool',
         severity: 'warning',
-        title: 'Failed Tool Calls',
-        description: `Found ${failedSteps.length} failed tool calls`,
+        title: t('analyzer.failedTool.title'),
+        description: t('analyzer.failedTool.description', { count: failedSteps.length }),
         steps: failedSteps.map(s => s.index),
         wastedCost,
       },
@@ -460,8 +464,11 @@ class ContextPressureRule implements AnalysisRule {
       {
         rule: 'context_pressure',
         severity: 'warning',
-        title: `High Context Pressure (${pressureSteps.length} steps)`,
-        description: `Detected sustained high input token usage averaging ${Math.round(peakAvg)} tokens (threshold: ${THRESHOLD})`,
+        title: t('analyzer.contextPressure.title', { count: pressureSteps.length }),
+        description: t('analyzer.contextPressure.description', {
+          avg: Math.round(peakAvg),
+          threshold: THRESHOLD,
+        }),
         steps: pressureSteps,
         wastedCost: 0,
         confidence,
@@ -526,7 +533,10 @@ class CompactionDetectedRule implements AnalysisRule {
 
       const dropText =
         compaction.dropTokens > 0
-          ? `Detected ${compaction.dropTokens.toLocaleString()} token drop (${(compaction.dropPct * 100).toFixed(0)}%). `
+          ? t('analyzer.compaction.dropDetected', {
+              tokens: compaction.dropTokens.toLocaleString(),
+              pct: (compaction.dropPct * 100).toFixed(0),
+            }) + ' '
           : '';
 
       findings.push({
@@ -535,8 +545,9 @@ class CompactionDetectedRule implements AnalysisRule {
         // No step number in the title: `steps` here are session-local indices,
         // while the UI renders globalIndex (which differs once subagent steps
         // are interleaved). The affected-step link below carries the right one.
-        title: 'Context Compaction',
-        description: `${dropText}${rereadSteps.length} files re-read after compaction.`,
+        title: t('analyzer.compaction.title'),
+        description:
+          dropText + t('analyzer.compaction.rereadCount', { count: rereadSteps.length }),
         steps: allSteps,
         wastedCost: rereadCost,
         // A transcript marker is fact, not inference.

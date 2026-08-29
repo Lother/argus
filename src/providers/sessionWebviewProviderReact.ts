@@ -139,7 +139,7 @@ export class SessionWebviewProviderReact {
               await this.deleteSession(sessionId, panel);
             } catch (error) {
               const msg = error instanceof Error ? error.message : String(error);
-              vscode.window.showErrorMessage('Argus: failed to delete session: ' + msg);
+              vscode.window.showErrorMessage(t('ext.deleteSessionFailed', { error: msg }));
             }
             break;
           // The webview holds only descriptions of a session's attachments;
@@ -151,7 +151,7 @@ export class SessionWebviewProviderReact {
               id: message.id,
               mediaType: blob?.mediaType,
               data: blob?.data,
-              error: blob ? undefined : 'Attachment not found in the transcript.',
+              error: blob ? undefined : t('ext.attachmentNotFoundInTranscript'),
             });
             break;
           }
@@ -453,7 +453,7 @@ export class SessionWebviewProviderReact {
   ): Promise<void> {
     const blob = await this.loadAttachment(sessionId, id, agentId);
     if (!blob) {
-      vscode.window.showErrorMessage('Argus: attachment is no longer in the transcript.');
+      vscode.window.showErrorMessage(t('ext.attachmentGone'));
       return;
     }
 
@@ -465,7 +465,7 @@ export class SessionWebviewProviderReact {
       await vscode.env.openExternal(vscode.Uri.file(file));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      vscode.window.showErrorMessage(`Argus: could not open the attachment: ${msg}`);
+      vscode.window.showErrorMessage(t('ext.attachmentOpenFailed', { error: msg }));
     }
   }
 
@@ -482,14 +482,14 @@ export class SessionWebviewProviderReact {
   ): Promise<void> {
     const blob = await this.loadAttachment(sessionId, id, agentId);
     if (!blob) {
-      vscode.window.showErrorMessage('Argus: attachment is no longer in the transcript.');
+      vscode.window.showErrorMessage(t('ext.attachmentGone'));
       return;
     }
 
     const fileName = safeFileName(name);
     const target = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file(path.join(os.homedir(), 'Downloads', fileName)),
-      saveLabel: 'Save Attachment',
+      saveLabel: t('ext.saveAttachmentLabel'),
     });
     if (!target) {
       return;
@@ -499,7 +499,7 @@ export class SessionWebviewProviderReact {
       await vscode.workspace.fs.writeFile(target, Buffer.from(blob.data, 'base64'));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      vscode.window.showErrorMessage(`Argus: could not save the attachment: ${msg}`);
+      vscode.window.showErrorMessage(t('ext.attachmentSaveFailed', { error: msg }));
     }
   }
 
@@ -527,7 +527,7 @@ export class SessionWebviewProviderReact {
   private async deleteSession(sessionId: string, panel: vscode.WebviewPanel): Promise<void> {
     const info = this.discoveryService.getSessionFilePath(sessionId);
     if (!info) {
-      vscode.window.showErrorMessage(`Argus: session ${sessionId} is no longer on disk.`);
+      vscode.window.showErrorMessage(t('ext.sessionGone', { sessionId }));
       return;
     }
 
@@ -544,7 +544,7 @@ export class SessionWebviewProviderReact {
     // it appending to a file nobody can reach: the session keeps running
     // while its history goes nowhere and `--resume` can no longer find it.
     if (this.discoveryService.isSessionLive(sessionId)) {
-      vscode.window.showWarningMessage("Argus: can't delete an active session.");
+      vscode.window.showWarningMessage(t('ext.cannotDeleteActiveSession'));
       return;
     }
 
@@ -560,10 +560,10 @@ export class SessionWebviewProviderReact {
 
     const confirmed = await vscode.window.showWarningMessage(
       useTrash
-        ? `Move session ${sessionId} to the trash?`
-        : `Permanently delete session ${sessionId}?`,
-      { modal: true, detail: targets.map(t => t.fsPath).join('\n') },
-      useTrash ? 'Move to Trash' : 'Delete Permanently'
+        ? t('ext.confirmMoveToTrash', { sessionId })
+        : t('ext.confirmDeletePermanently', { sessionId }),
+      { modal: true, detail: targets.map(uri => uri.fsPath).join('\n') },
+      useTrash ? t('ext.moveToTrashButton') : t('ext.deletePermanentlyButton')
     );
     if (!confirmed) {
       return;
@@ -577,12 +577,12 @@ export class SessionWebviewProviderReact {
     // turned off in settings the user already agreed to that above.
     if (failures.length > 0 && useTrash) {
       const bypass = await vscode.window.showWarningMessage(
-        `Argus: could not move session ${sessionId} to the trash.`,
+        t('ext.trashFailed', { sessionId }),
         {
           modal: true,
-          detail: `${this.describeFailures(failures)}\n\nDelete permanently instead? This cannot be undone.`,
+          detail: `${this.describeFailures(failures)}\n\n${t('ext.deletePermanentlyPrompt')}`,
         },
-        'Delete Permanently'
+        t('ext.deletePermanentlyButton')
       );
       if (!bypass) {
         return;
@@ -592,7 +592,10 @@ export class SessionWebviewProviderReact {
 
     if (failures.length > 0) {
       vscode.window.showErrorMessage(
-        `Argus: failed to delete session ${sessionId}. ${this.describeFailures(failures)}`
+        t('ext.deleteSessionFailedDetailed', {
+          sessionId,
+          details: this.describeFailures(failures),
+        })
       );
     }
 

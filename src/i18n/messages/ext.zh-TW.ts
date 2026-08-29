@@ -11,12 +11,32 @@ export const extZhTW: Messages = {
   'ext.refreshingSessions': 'Argus：正在重新整理工作階段…',
   'ext.statusBarTooltip': 'Claude Code 工作階段除錯工具',
 
+  // sessionWebviewProviderReact.ts
+  'ext.deleteSessionFailed': 'Argus：刪除工作階段失敗：{error}',
+  'ext.attachmentNotFoundInTranscript': '在對話紀錄中找不到此附件。',
+  'ext.attachmentGone': 'Argus：此附件已不在對話紀錄中。',
+  'ext.attachmentOpenFailed': 'Argus：無法開啟附件：{error}',
+  'ext.attachmentSaveFailed': 'Argus：無法儲存附件：{error}',
+  'ext.saveAttachmentLabel': '儲存附件',
+  'ext.sessionGone': 'Argus：工作階段 {sessionId} 已不在磁碟上。',
+  'ext.cannotDeleteActiveSession': 'Argus：無法刪除仍在使用中的工作階段。',
+  'ext.confirmMoveToTrash': '要將工作階段 {sessionId} 移到資源回收筒嗎？',
+  'ext.confirmDeletePermanently': '要永久刪除工作階段 {sessionId} 嗎？',
+  'ext.moveToTrashButton': '移到資源回收筒',
+  'ext.deletePermanentlyButton': '永久刪除',
+  'ext.trashFailed': 'Argus：無法將工作階段 {sessionId} 移到資源回收筒。',
+  'ext.deletePermanentlyPrompt': '要改為永久刪除嗎？此動作無法復原。',
+  'ext.deleteSessionFailedDetailed': 'Argus：刪除工作階段 {sessionId} 失敗。{details}',
+
   // sessionListViewProvider.ts
-  'sidebar.searchPlaceholder': '搜尋工作階段…',
+  'sidebar.searchPlaceholder': '搜尋標題、專案或 ID…',
+  'sidebar.searchScopeTooltip': '同時搜尋對話紀錄內容（較慢）',
   'sidebar.all': '全部',
   'sidebar.allModels': '全部模型',
   'sidebar.allTime': '全部時間',
   'sidebar.last1Hour': '最近 1 小時',
+  'sidebar.last3Hours': '最近 3 小時',
+  'sidebar.last6Hours': '最近 6 小時',
   'sidebar.last24Hours': '最近 24 小時',
   'sidebar.last7Days': '最近 7 天',
   'sidebar.last30Days': '最近 30 天',
@@ -35,6 +55,13 @@ export const extZhTW: Messages = {
   'sidebar.pillDateFormat': '{year}年{month}{day}日',
   'sidebar.months': '1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月',
   'sidebar.weekdays': '一,二,三,四,五,六,日',
+  'sidebar.dateGroup.today': '今天',
+  'sidebar.dateGroup.yesterday': '昨天',
+  'sidebar.dateGroup.daysAgo': '{n} 天前',
+  'sidebar.dateGroup.aWeekAgo': '一週前',
+  'sidebar.dateGroup.weeksAgo': '{n} 週前',
+  'sidebar.dateGroup.aMonthAgo': '一個月前',
+  'sidebar.dateGroup.monthsAgo': '{n} 個月前',
 
   // datePickerPanel.ts (labels also reused by the sidebar's inline calendar)
   'datePicker.from': '起始',
@@ -56,7 +83,7 @@ export const extZhTW: Messages = {
   'analyzer.contextPressure.title': '高上下文壓力（{count} 個步驟）',
   'analyzer.contextPressure.description':
     '偵測到持續偏高的輸入 token 用量，平均 {avg} token（門檻：{threshold}）',
-  'analyzer.compaction.title': '步驟 {step} 發生上下文壓縮',
-  'analyzer.compaction.description':
-    '偵測到 {tokens} token 的下降幅度（{pct}%）。壓縮後重新讀取了 {count} 個檔案。',
+  'analyzer.compaction.title': '發生上下文壓縮',
+  'analyzer.compaction.dropDetected': '偵測到 {tokens} token 的下降幅度（{pct}%）。',
+  'analyzer.compaction.rereadCount': '壓縮後重新讀取了 {count} 個檔案。',
 };
