@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Attachment } from '../types/session';
+import { t } from '../i18n';
 import './Attachments.css';
 
 // Bytes stay on the host until something on screen asks for them: one
@@ -32,7 +33,7 @@ export function useAttachmentBytes(attachments: Attachment[], agentId?: string) 
         [message.id]:
           typeof message.data === 'string'
             ? { loading: false, base64: message.data, mediaType: message.mediaType }
-            : { loading: false, error: message.error || 'Could not read the attachment.' },
+            : { loading: false, error: message.error || t('attachments.readError') },
       }));
     };
     window.addEventListener('message', onMessage);
@@ -157,14 +158,14 @@ const Attachments = ({ attachments, agentId }: Props) => {
           return (
             <div key={attachment.id} className="attachment-panel">
               <div className="attachment-panel-note">
-                {attachment.mediaType} — no preview. Save it to disk to open it yourself.
+                {t('attachments.noPreview', { mediaType: attachment.mediaType })}
               </div>
               <button
                 type="button"
                 className="attachment-action"
                 onClick={() => saveAttachment(attachment, agentId)}
               >
-                Save as…
+                {t('attachments.saveAs')}
               </button>
             </div>
           );
@@ -172,7 +173,9 @@ const Attachments = ({ attachments, agentId }: Props) => {
 
         return (
           <div key={attachment.id} className="attachment-panel">
-            {blob?.loading && <div className="attachment-panel-note">Loading…</div>}
+            {blob?.loading && (
+              <div className="attachment-panel-note">{t('attachments.loading')}</div>
+            )}
             {blob?.error && <div className="attachment-panel-note error">{blob.error}</div>}
             {blob?.base64 && (
               <>
@@ -180,7 +183,7 @@ const Attachments = ({ attachments, agentId }: Props) => {
                   className="attachment-image"
                   src={dataUrl(attachment, blob)}
                   alt={attachment.name}
-                  title="Open in the system image viewer"
+                  title={t('attachments.openInViewer')}
                   onClick={() => openAttachment(attachment, agentId)}
                 />
                 <div className="attachment-panel-actions">
@@ -189,14 +192,14 @@ const Attachments = ({ attachments, agentId }: Props) => {
                     className="attachment-action"
                     onClick={() => openAttachment(attachment, agentId)}
                   >
-                    Open externally
+                    {t('attachments.openExternally')}
                   </button>
                   <button
                     type="button"
                     className="attachment-action"
                     onClick={() => saveAttachment(attachment, agentId)}
                   >
-                    Save as…
+                    {t('attachments.saveAs')}
                   </button>
                 </div>
               </>

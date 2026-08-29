@@ -1,5 +1,6 @@
 import { Step, AnalysisResult } from '../types/session';
 import { calculateCostBreakdown } from '../../../src/types/pricing';
+import { t } from '../i18n';
 import { Pie, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -142,7 +143,12 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
             const chartTotal = sortedTypes.slice(0, 8).reduce((sum, [_, data]) => sum + data.cost, 0);
             const percentage = ((value / chartTotal) * 100).toFixed(1);
             const totalPercentage = ((value / totalCost) * 100).toFixed(1);
-            return `${context.label}: $${value.toFixed(4)} (${percentage}% of chart, ${totalPercentage}% of total)`;
+            return t('cost.pieTooltip', {
+              label: context.label,
+              value: value.toFixed(4),
+              percent: percentage,
+              totalPercent: totalPercentage,
+            });
           },
         },
       },
@@ -151,7 +157,12 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
 
   // Token breakdown doughnut
   const tokenData = {
-    labels: ['Input Tokens', 'Output Tokens', 'Cache Read', 'Cache Write'],
+    labels: [
+      t('cost.inputTokens'),
+      t('cost.outputTokens'),
+      t('cost.cacheRead'),
+      t('cost.cacheWrite'),
+    ],
     datasets: [
       {
         data: [inputCost, outputCost, cacheReadCost, cacheCreateCost],
@@ -185,7 +196,11 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
             const value = context.parsed;
             const tokenTotal = inputCost + outputCost + cacheReadCost + cacheCreateCost;
             const percentage = tokenTotal > 0 ? ((value / tokenTotal) * 100).toFixed(1) : '0.0';
-            return `${context.label}: $${value.toFixed(4)} (${percentage}%)`;
+            return t('cost.tokenTooltip', {
+              label: context.label,
+              value: value.toFixed(4),
+              percent: percentage,
+            });
           },
         },
       },
@@ -196,36 +211,36 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
     <div className="cost-tab">
       <div className="cost-summary">
         <div className="cost-card total">
-          <div className="cost-label">Total Cost</div>
+          <div className="cost-label">{t('cost.totalCost')}</div>
           <div className="cost-value">
             {hasEstimatedCosts && <span className="cost-approx">≈</span>}
             ${totalCost.toFixed(4)}
           </div>
           {hasEstimatedCosts && (
-            <div className="cost-note" title="Some steps ran on a model with no exact price in the table; those are priced at their model family's rate.">
-              estimated — unrecognised model
+            <div className="cost-note" title={t('cost.estimatedTitle')}>
+              {t('cost.estimatedNote')}
             </div>
           )}
         </div>
         <div className="cost-card wasted">
-          <div className="cost-label">Wasted Cost</div>
+          <div className="cost-label">{t('cost.wastedCost')}</div>
           <div className="cost-value">${wastedCost.toFixed(4)}</div>
         </div>
         <div className="cost-card efficiency">
-          <div className="cost-label">Efficiency</div>
+          <div className="cost-label">{t('cost.efficiency')}</div>
           <div className="cost-value">{efficiency.toFixed(1)}%</div>
         </div>
       </div>
 
       <div className="cost-charts">
         <div className="chart-container">
-          <h3>Cost Distribution by Tool</h3>
+          <h3>{t('cost.chartByTool')}</h3>
           <div className="chart-wrapper">
             <Pie data={pieData} options={pieOptions} />
           </div>
         </div>
         <div className="chart-container">
-          <h3>Cost Distribution by Token Type</h3>
+          <h3>{t('cost.chartByTokenType')}</h3>
           <div className="chart-wrapper">
             <Doughnut data={tokenData} options={tokenOptions} />
           </div>
@@ -233,14 +248,14 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
       </div>
 
       <div className="cost-breakdown">
-        <h3>Detailed Cost by Tool/Type</h3>
+        <h3>{t('cost.breakdownTitle')}</h3>
         <div className="cost-table">
           {sortedTypes.map(([type, data]) => (
             <div key={type} className="cost-row">
               <div className="cost-row-header">
                 <span className="cost-type">{type}</span>
                 <div className="cost-stats">
-                  <span className="cost-count">{data.count}x</span>
+                  <span className="cost-count">{t('cost.callCount', { count: data.count })}</span>
                   <span className="cost-amount">${data.cost.toFixed(4)}</span>
                 </div>
               </div>
@@ -256,7 +271,9 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
                     #{idx}
                   </button>
                 ))}
-                {data.steps.length > 10 && <span>+{data.steps.length - 10} more</span>}
+                {data.steps.length > 10 && (
+                  <span>{t('cost.moreSteps', { count: data.steps.length - 10 })}</span>
+                )}
               </div>
             </div>
           ))}

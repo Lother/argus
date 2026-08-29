@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
 import { Step } from '../types/session';
+import { t } from '../i18n';
 import './ContentRenderer.css';
 
 // ─── Markdown engine with code-block highlighting ───────────────────────
@@ -42,9 +43,9 @@ interface Props {
 
 // Only kinds whose label says more than the step header already does. "Text"
 // and "Thinking" would just repeat the step type, so they carry no label.
-const KIND_LABEL: Record<string, string> = {
-  compact: 'Compaction Summary',
-  user: 'User Prompt',
+const KIND_LABEL_KEY: Record<string, string> = {
+  compact: 'contentRenderer.kindCompact',
+  user: 'contentRenderer.kindUser',
 };
 
 // pretty = markdown, raw = verbatim with horizontal scroll, wrap = raw with
@@ -55,7 +56,7 @@ const ContentRenderer = ({ step, meta }: Props) => {
   const [view, setView] = useState<View>('pretty');
   const content = step.content || '';
   const kind = step.type;
-  const label = KIND_LABEL[kind];
+  const label = KIND_LABEL_KEY[kind] ? t(KIND_LABEL_KEY[kind]) : undefined;
 
   const html = useMemo(() => {
     if (!content) return '';
@@ -81,22 +82,22 @@ const ContentRenderer = ({ step, meta }: Props) => {
             className={`cr-toggle-btn${view === 'pretty' ? ' active' : ''}`}
             onClick={() => setView('pretty')}
           >
-            Pretty
+            {t('contentRenderer.pretty')}
           </button>
           <button
             type="button"
             className={`cr-toggle-btn${view === 'raw' ? ' active' : ''}`}
             onClick={() => setView('raw')}
           >
-            Raw
+            {t('contentRenderer.raw')}
           </button>
           <button
             type="button"
             className={`cr-toggle-btn${view === 'wrap' ? ' active' : ''}`}
             onClick={() => setView('wrap')}
-            title="Raw view with long lines wrapped to the panel width"
+            title={t('contentRenderer.wrapTitle')}
           >
-            Wrap
+            {t('contentRenderer.wrap')}
           </button>
         </div>
       </div>

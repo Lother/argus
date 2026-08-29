@@ -10,6 +10,7 @@ import PerformanceTab from './components/PerformanceTab';
 import InsightsTab from './components/InsightsTab';
 import MapTab, { DirEntry } from './components/MapTab';
 import SessionNotes from './components/SessionNotes';
+import { t } from './i18n';
 import './styles/global.css';
 import './styles/App.css';
 
@@ -89,7 +90,7 @@ function App() {
     return (
       <div className="loading">
         <div className="spinner"></div>
-        <p>Loading session data...</p>
+        <p>{t('app.loading')}</p>
       </div>
     );
   }
@@ -97,7 +98,7 @@ function App() {
   if (!session) {
     return (
       <div className="app-error">
-        <p>No session data available</p>
+        <p>{t('app.noData')}</p>
       </div>
     );
   }
@@ -155,10 +156,10 @@ function App() {
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
-    if (sec < 60) return `${sec}s`;
+    if (sec < 60) return t('fmt.durationSec', { value: sec });
     const min = Math.floor(sec / 60);
     const remainder = sec % 60;
-    return `${min}m ${remainder}s`;
+    return t('fmt.durationMinSec', { minutes: min, seconds: remainder });
   };
 
   return (
@@ -170,16 +171,17 @@ function App() {
           <span className="meta-badge">{formatModel(session.model)}</span>
           <span>{formatDuration(session.durationMs)}</span>
           <span className="meta-dim">
-            {flatSteps.length} steps
-            {session.subagents.length > 0 && ` · ${session.subagents.length} agents`}
+            {t('app.stepCount', { count: flatSteps.length })}
+            {session.subagents.length > 0 &&
+              ` · ${t('app.agentCount', { count: session.subagents.length })}`}
           </span>
           <span className="detail-session-id">
-            <span title="Session ID">{session.sessionId}</span>
+            <span title={t('app.sessionIdTitle')}>{session.sessionId}</span>
             <button
               className={`copy-btn ${idCopied ? 'copied' : ''}`}
               onClick={() => copySessionId(session.sessionId)}
-              title={idCopied ? 'Copied!' : 'Copy session ID'}
-              aria-label="Copy session ID"
+              title={idCopied ? t('app.copied') : t('app.copySessionId')}
+              aria-label={t('app.copySessionId')}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <rect x="5.75" y="5.75" width="8.5" height="8.5" rx="1.5" />
@@ -194,8 +196,8 @@ function App() {
             <button
               className="view-toggle-btn"
               onClick={toggleTabs}
-              title={tabsCollapsed ? 'Show tabs' : 'Hide tabs'}
-              aria-label={tabsCollapsed ? 'Show tabs' : 'Hide tabs'}
+              title={t(tabsCollapsed ? 'app.showTabs' : 'app.hideTabs')}
+              aria-label={t(tabsCollapsed ? 'app.showTabs' : 'app.hideTabs')}
               aria-expanded={!tabsCollapsed}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -213,8 +215,8 @@ function App() {
             <button
               className="view-toggle-btn"
               onClick={toggleSearch}
-              title={searchCollapsed ? 'Show search bar' : 'Hide search bar'}
-              aria-label={searchCollapsed ? 'Show search bar' : 'Hide search bar'}
+              title={t(searchCollapsed ? 'app.showSearchBar' : 'app.hideSearchBar')}
+              aria-label={t(searchCollapsed ? 'app.showSearchBar' : 'app.hideSearchBar')}
               aria-expanded={!searchCollapsed}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -236,8 +238,8 @@ function App() {
           <button
             className="delete-btn"
             onClick={deleteSession}
-            title="Delete session"
-            aria-label="Delete session"
+            title={t('app.deleteSession')}
+            aria-label={t('app.deleteSession')}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M2.5 4.25h11" strokeLinecap="round" />
@@ -257,49 +259,49 @@ function App() {
             className={`tab ${activeTab === 'steps' ? 'active' : ''}`}
             onClick={() => setActiveTab('steps')}
           >
-            Steps ({stepsTabLabel})
+            {t('app.tabSteps', { count: stepsTabLabel })}
           </button>
           <button
             className={`tab ${activeTab === 'analysis' ? 'active' : ''}`}
             onClick={() => setActiveTab('analysis')}
           >
-            Analysis ({findingCount})
+            {t('app.tabAnalysis', { count: findingCount })}
           </button>
           <button
             className={`tab ${activeTab === 'cost' ? 'active' : ''}`}
             onClick={() => setActiveTab('cost')}
           >
-            Cost (${totalCost.toFixed(2)})
+            {t('app.tabCost', { cost: totalCost.toFixed(2) })}
           </button>
           <button
             className={`tab ${activeTab === 'flow' ? 'active' : ''}`}
             onClick={() => setActiveTab('flow')}
           >
-            Flow
+            {t('app.tabFlow')}
           </button>
           <button
             className={`tab ${activeTab === 'map' ? 'active' : ''}`}
             onClick={() => setActiveTab('map')}
           >
-            Map
+            {t('app.tabMap')}
           </button>
           <button
             className={`tab ${activeTab === 'context' ? 'active' : ''}`}
             onClick={() => setActiveTab('context')}
           >
-            Context
+            {t('app.tabContext')}
           </button>
           <button
             className={`tab ${activeTab === 'performance' ? 'active' : ''}`}
             onClick={() => setActiveTab('performance')}
           >
-            Performance
+            {t('app.tabPerformance')}
           </button>
           <button
             className={`tab ${activeTab === 'insights' ? 'active' : ''}`}
             onClick={() => setActiveTab('insights')}
           >
-            Insights
+            {t('app.tabInsights')}
           </button>
         </div>
       )}
