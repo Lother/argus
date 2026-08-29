@@ -365,7 +365,6 @@ export class SessionWebviewProviderReact {
   </head>
   <body>
     <div id="root"></div>
-    <script>window.__ARGUS_LOCALE__ = ${JSON.stringify(locale)};</script>
     <script src="${scriptUri}"></script>
   </body>
 </html>`;
