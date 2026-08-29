@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Step } from '../types/session';
+import { t } from '../i18n';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -62,9 +63,8 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
   }, [steps]);
 
   const formatDuration = (ms: number): string => {
-    if (ms < 1000) return `${Math.round(ms)}ms`;
-    const sec = (ms / 1000).toFixed(1);
-    return `${sec}s`;
+    if (ms < 1000) return t('fmt.durationMs', { value: Math.round(ms) });
+    return t('fmt.durationSec', { value: (ms / 1000).toFixed(1) });
   };
 
   // Chart data for slowest operations
@@ -72,7 +72,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
     labels: performanceData.slowest.map(s => `#${s.index} ${s.toolName || s.type}`),
     datasets: [
       {
-        label: 'Duration (ms)',
+        label: t('performance.chartLabel'),
         data: performanceData.slowest.map(s => s.duration),
         backgroundColor: 'rgba(86, 156, 214, 0.8)',
         borderColor: 'rgba(86, 156, 214, 1)',
@@ -90,7 +90,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
       },
       title: {
         display: true,
-        text: 'Top 10 Slowest Operations',
+        text: t('performance.chartTitle'),
         color: getComputedStyle(document.documentElement).getPropertyValue('--text-bright').trim() || '#CCCCCC',
         font: { size: 14 },
       },
@@ -119,11 +119,11 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
     <div className="performance-tab">
       <div className="perf-summary">
         <div className="perf-card">
-          <div className="perf-label">Total Duration</div>
+          <div className="perf-label">{t('performance.totalDuration')}</div>
           <div className="perf-value">{formatDuration(performanceData.totalDuration)}</div>
         </div>
         <div className="perf-card">
-          <div className="perf-label">Slowest Step</div>
+          <div className="perf-label">{t('performance.slowestStep')}</div>
           <div className="perf-value">
             {performanceData.slowest[0] ? formatDuration(performanceData.slowest[0].duration) : '-'}
           </div>
@@ -132,7 +132,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
           </div>
         </div>
         <div className="perf-card">
-          <div className="perf-label">Avg Duration</div>
+          <div className="perf-label">{t('performance.avgDuration')}</div>
           <div className="perf-value">
             {formatDuration(performanceData.totalDuration / steps.length)}
           </div>
@@ -146,7 +146,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
       </div>
 
       <div className="duration-breakdown">
-        <h3>Duration by Tool Type</h3>
+        <h3>{t('performance.durationByToolType')}</h3>
         <div className="duration-table">
           {Object.entries(performanceData.durationByType)
             .sort((a, b) => b[1] - a[1])
@@ -170,7 +170,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
       </div>
 
       <div className="slowest-steps-section">
-        <h3>Slowest Steps Detail</h3>
+        <h3>{t('performance.slowestStepsDetail')}</h3>
         <div className="slowest-steps-list">
           {performanceData.slowest.map(step => (
             <div

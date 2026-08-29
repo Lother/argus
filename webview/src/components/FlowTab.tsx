@@ -1,4 +1,5 @@
 import { Step } from '../types/session';
+import { t } from '../i18n';
 import './FlowTab.css';
 
 interface Props {
@@ -57,25 +58,29 @@ const FlowTab = ({ steps, onGoToStep }: Props) => {
     <div className="flow-tab">
       <div className="flow-summary">
         <div className="flow-stat">
-          <div className="flow-label">Unique Files Read</div>
+          <div className="flow-label">{t('flow.uniqueFilesRead')}</div>
           <div className="flow-value">{uniqueFilesRead}</div>
-          <div className="flow-sublabel">{readOperations} operations</div>
+          <div className="flow-sublabel">
+            {t('flow.operationCount', { count: readOperations })}
+          </div>
         </div>
         <div className="flow-stat">
-          <div className="flow-label">Unique Files Written</div>
+          <div className="flow-label">{t('flow.uniqueFilesWritten')}</div>
           <div className="flow-value">{uniqueFilesWritten}</div>
-          <div className="flow-sublabel">{writeOperations} operations</div>
+          <div className="flow-sublabel">
+            {t('flow.operationCount', { count: writeOperations })}
+          </div>
         </div>
         <div className="flow-stat">
-          <div className="flow-label">Total Operations</div>
+          <div className="flow-label">{t('flow.totalOperations')}</div>
           <div className="flow-value">{totalOperations}</div>
         </div>
       </div>
 
       <div className="file-flow-graph">
-        <h3>File Operations List</h3>
+        <h3>{t('flow.listTitle')}</h3>
         {sortedFiles.length === 0 ? (
-          <div className="empty">No file operations detected</div>
+          <div className="empty">{t('flow.empty')}</div>
         ) : (
           <div className="file-list">
             {sortedFiles.map(([path, ops]) => (
@@ -84,7 +89,13 @@ const FlowTab = ({ steps, onGoToStep }: Props) => {
                   <code>{path.split('/').pop()}</code>
                   <span className="file-full-path">{path}</span>
                   {ops.agentIds.size > 0 && (
-                    <span className="file-agent-badge" title={`${ops.agentIds.size} sub-agent${ops.agentIds.size > 1 ? 's' : ''} touched this file`}>
+                    <span
+                      className="file-agent-badge"
+                      title={t(
+                        ops.agentIds.size > 1 ? 'flow.agentBadgeOther' : 'flow.agentBadgeOne',
+                        { count: ops.agentIds.size }
+                      )}
+                    >
                       A×{ops.agentIds.size}
                     </span>
                   )}
@@ -92,14 +103,20 @@ const FlowTab = ({ steps, onGoToStep }: Props) => {
                 <div className="file-ops">
                   {ops.reads.length > 0 && (
                     <div className="op-group read">
-                      <span className="op-label">Read ({ops.reads.length}x)</span>
+                      <span className="op-label">
+                        {t('flow.readOps', { count: ops.reads.length })}
+                      </span>
                       <div className="op-steps">
                         {ops.reads.slice(0, 8).map(ref => (
                           <button
                             key={ref.stepIndex}
                             className={`step-link${ref.agentId ? ' step-link-agent' : ''}`}
                             onClick={() => onGoToStep(ref.stepIndex)}
-                            title={ref.agentId ? `agent ${ref.agentId.slice(0, 12)}` : undefined}
+                            title={
+                              ref.agentId
+                                ? t('flow.agentStepTitle', { id: ref.agentId.slice(0, 12) })
+                                : undefined
+                            }
                           >
                             #{ref.stepIndex}
                           </button>
@@ -110,14 +127,20 @@ const FlowTab = ({ steps, onGoToStep }: Props) => {
                   )}
                   {ops.writes.length > 0 && (
                     <div className="op-group write">
-                      <span className="op-label">Write ({ops.writes.length}x)</span>
+                      <span className="op-label">
+                        {t('flow.writeOps', { count: ops.writes.length })}
+                      </span>
                       <div className="op-steps">
                         {ops.writes.slice(0, 8).map(ref => (
                           <button
                             key={ref.stepIndex}
                             className={`step-link${ref.agentId ? ' step-link-agent' : ''}`}
                             onClick={() => onGoToStep(ref.stepIndex)}
-                            title={ref.agentId ? `agent ${ref.agentId.slice(0, 12)}` : undefined}
+                            title={
+                              ref.agentId
+                                ? t('flow.agentStepTitle', { id: ref.agentId.slice(0, 12) })
+                                : undefined
+                            }
                           >
                             #{ref.stepIndex}
                           </button>

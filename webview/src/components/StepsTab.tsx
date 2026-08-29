@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Step, Subagent, Finding } from '../types/session';
+import { t, locale } from '../i18n';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import RendererErrorBoundary from './RendererErrorBoundary';
@@ -192,11 +193,26 @@ const Dropdown = ({ id, icon, label, items, selected, onSelect, isActive, multiS
 };
 
 /* ── Sort labels ── */
-const SORT_LABELS: Record<string, string> = {
-  newest: 'Newest',
-  oldest: 'Oldest',
-  'cost-desc': 'Cost ↓',
-  'cost-asc': 'Cost ↑',
+// Keys of this map are the persisted sort-mode values — they must stay in
+// English; only the caption they resolve to is localized.
+const SORT_LABEL_KEYS: Record<string, string> = {
+  newest: 'steps.sortNewest',
+  oldest: 'steps.sortOldest',
+  'cost-desc': 'steps.sortCostDesc',
+  'cost-asc': 'steps.sortCostAsc',
+};
+
+// Same deal for the status filter values.
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  success: 'steps.statusSuccess',
+  failed: 'steps.statusFailed',
+  issues: 'steps.statusIssues',
+};
+
+// `thinking` / `text` are `step.type` values; only the caption is localized.
+const STEP_TYPE_LABEL_KEYS: Record<string, string> = {
+  thinking: 'steps.typeThinking',
+  text: 'steps.typeText',
 };
 
 /* ── Main component ── */
@@ -347,8 +363,8 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     const tools: DropdownItem[] = [];
 
     toolCounts.forEach((count, key) => {
-      if (key === 'thinking' || key === 'text') {
-        types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
+      if (STEP_TYPE_LABEL_KEYS[key]) {
+        types.push({ value: key, label: t(STEP_TYPE_LABEL_KEYS[key]), count });
       } else {
         tools.push({ value: key, label: key, count });
       }
@@ -358,7 +374,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     tools.sort((a, b) => a.label.localeCompare(b.label));
 
     const items: (DropdownItem | 'separator')[] = [
-      { value: 'all', label: 'All Steps', count: steps.length },
+      { value: 'all', label: t('steps.filterAllSteps'), count: steps.length },
     ];
     if (types.length > 0) {
       items.push('separator', ...types);
@@ -371,20 +387,20 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
 
   // Build status dropdown items
   const statusItems: (DropdownItem | 'separator')[] = useMemo(() => [
-    { value: 'all', label: 'All', count: steps.length },
+    { value: 'all', label: t('steps.statusAll'), count: steps.length },
     'separator',
-    { value: 'success', label: 'Success', count: statusCounts.success },
-    { value: 'failed', label: 'Failed', count: statusCounts.failed },
-    { value: 'issues', label: 'Has Issues', count: statusCounts.issues },
+    { value: 'success', label: t('steps.statusSuccess'), count: statusCounts.success },
+    { value: 'failed', label: t('steps.statusFailed'), count: statusCounts.failed },
+    { value: 'issues', label: t('steps.statusIssues'), count: statusCounts.issues },
   ], [steps.length, statusCounts]);
 
   // Build sort dropdown items
   const sortItems: (DropdownItem | 'separator')[] = [
-    { value: 'newest', label: 'Newest First' },
-    { value: 'oldest', label: 'Oldest First' },
+    { value: 'newest', label: t('steps.sortNewestFirst') },
+    { value: 'oldest', label: t('steps.sortOldestFirst') },
     'separator',
-    { value: 'cost-desc', label: 'Cost: High → Low' },
-    { value: 'cost-asc', label: 'Cost: Low → High' },
+    { value: 'cost-desc', label: t('steps.sortCostHighLow') },
+    { value: 'cost-asc', label: t('steps.sortCostLowHigh') },
   ];
 
   // Filtered and sorted steps
@@ -451,16 +467,21 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
   const formatTime = (timestamp?: string | Date) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return date.toLocaleTimeString(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
   };
 
   const formatDuration = (ms: number): string => {
-    if (ms < 1000) return `${ms}ms`;
+    if (ms < 1000) return t('fmt.durationMs', { value: ms });
     const sec = ms / 1000;
-    if (sec < 60) return `${sec.toFixed(1)}s`;
+    if (sec < 60) return t('fmt.durationSec', { value: sec.toFixed(1) });
     const min = Math.floor(sec / 60);
     const rem = Math.round(sec % 60);
-    return `${min}m ${rem}s`;
+    return t('fmt.durationMinSec', { minutes: min, seconds: rem });
   };
 
   const getStepSummary = (step: Step): string => {
@@ -475,9 +496,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
         case 'Edit':
           return step.toolInput.file_path || '';
         case 'Grep':
-          return `"${step.toolInput.pattern}"${step.toolInput.path ? ` in ${step.toolInput.path}` : ''}`;
         case 'Glob':
-          return `"${step.toolInput.pattern}"${step.toolInput.path ? ` in ${step.toolInput.path}` : ''}`;
+          return step.toolInput.path
+            ? t('steps.summaryPatternIn', {
+                pattern: step.toolInput.pattern,
+                path: step.toolInput.path,
+              })
+            : t('steps.summaryPattern', { pattern: step.toolInput.pattern });
         case 'Bash':
           // Full command preserved — overflow handled by CSS ellipsis on .step-summary.
           return step.toolInput.command || '';
@@ -491,8 +516,16 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
     }
   };
 
-  const toolLabel = toolFilter.size === 0 ? 'Tool' : toolFilter.size === 1 ? [...toolFilter][0] : `${toolFilter.size} tools`;
-  const statusLabel = statusFilter === 'all' ? 'Status' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
+  const toolLabel =
+    toolFilter.size === 0
+      ? t('steps.filterTool')
+      : toolFilter.size === 1
+        ? [...toolFilter][0]
+        : t('steps.filterToolCount', { count: toolFilter.size });
+  const statusLabel =
+    statusFilter === 'all' || !STATUS_LABEL_KEYS[statusFilter]
+      ? t('steps.filterStatus')
+      : t(STATUS_LABEL_KEYS[statusFilter]);
   const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== 'newest';
 
   const clearAllFilters = () => {
@@ -511,7 +544,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
           <input
             className="steps-search-input"
             type="text"
-            placeholder="Search steps..."
+            placeholder={t('steps.searchPlaceholder')}
             spellCheck={false}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -551,7 +584,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
           <Dropdown
             id="sort"
             icon={<SortIcon />}
-            label={SORT_LABELS[sortMode]}
+            label={t(SORT_LABEL_KEYS[sortMode] ?? 'steps.sortNewest')}
             items={sortItems}
             selected={sortMode}
             onSelect={setSortMode}
@@ -563,18 +596,24 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
           {hasActiveFilters && (
             <>
               <div className="steps-divider" />
-              <button className="steps-clear-filters" onClick={clearAllFilters} title="Clear all filters">
+              <button
+                className="steps-clear-filters"
+                onClick={clearAllFilters}
+                title={t('steps.clearFiltersTitle')}
+              >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
                 </svg>
-                <span>Clear</span>
+                <span>{t('steps.clear')}</span>
               </button>
             </>
           )}
         </div>
 
         <div className="steps-filter-meta">
-          <span className="steps-count">Showing {filteredSteps.length} / {steps.length}</span>
+          <span className="steps-count">
+            {t('steps.showing', { shown: filteredSteps.length, total: steps.length })}
+          </span>
         </div>
       </div>
 
@@ -627,7 +666,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                   <span className="step-type">{step.toolName || step.type}</span>
                   {ownerAgent && (
                     <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
-                      {ownerAgent.agentType || 'agent'}
+                      {ownerAgent.agentType || t('steps.agentFallback')}
                     </span>
                   )}
                   {linkedAgents && linkedAgents.length > 0 && (
@@ -637,9 +676,12 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                         e.stopPropagation();
                         for (const a of linkedAgents) toggleAgent(a.agentId);
                       }}
-                      title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
+                      title={t(allCollapsed ? 'steps.showAgentSteps' : 'steps.hideAgentSteps')}
                     >
-                      {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
+                      {allCollapsed ? '▸' : '▾'}{' '}
+                      {t('steps.agentStepCount', {
+                        count: linkedAgents.reduce((acc, a) => acc + a.stepCount, 0),
+                      })}
                     </button>
                   )}
                   {step.toolSuccess === true && <span className="step-success">✓</span>}
@@ -647,7 +689,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                     <span className="step-summary">{getStepSummary(step)}</span>
                   )}
                   {step.toolSuccess === false && (
-                    <span className="step-failed" title="Tool returned an error">
+                    <span className="step-failed" title={t('steps.toolErrorTitle')}>
                       <svg
                         viewBox="0 0 24 24"
                         fill="none"
@@ -661,7 +703,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                         <line x1="15" y1="9" x2="9" y2="15" />
                         <line x1="9" y1="9" x2="15" y2="15" />
                       </svg>
-                      <span className="step-failed-label">error</span>
+                      <span className="step-failed-label">{t('steps.errorLabel')}</span>
                     </span>
                   )}
                 </div>
@@ -695,7 +737,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                         fallback={(err) => (
                           <div className="renderer-fallback">
                             <div className="renderer-fallback-header">
-                              Renderer crashed — showing raw data. ({err.message})
+                              {t('steps.rendererCrashedData', { message: err.message })}
                             </div>
                             {step.toolInput !== undefined && (
                               <pre className="detail-code">{JSON.stringify(step.toolInput, null, 2)}</pre>
@@ -717,7 +759,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
                         fallback={(err) => (
                           <div className="renderer-fallback">
                             <div className="renderer-fallback-header">
-                              Renderer crashed — showing raw text. ({err.message})
+                              {t('steps.rendererCrashedText', { message: err.message })}
                             </div>
                             <pre className="detail-text">{step.content}</pre>
                           </div>
@@ -730,12 +772,12 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
 
                   {step.usage && (
                     <div className="detail-section">
-                      <div className="detail-label">Token Usage</div>
+                      <div className="detail-label">{t('steps.tokenUsage')}</div>
                       <div className="token-grid">
-                        <div>Input: <strong>{step.usage.input_tokens}</strong></div>
-                        <div>Output: <strong>{step.usage.output_tokens}</strong></div>
-                        <div>Cache Read: <strong>{step.usage.cache_read_input_tokens}</strong></div>
-                        <div>Cache Create: <strong>{step.usage.cache_creation_input_tokens}</strong></div>
+                        <div>{t('steps.tokenInput')}: <strong>{step.usage.input_tokens}</strong></div>
+                        <div>{t('steps.tokenOutput')}: <strong>{step.usage.output_tokens}</strong></div>
+                        <div>{t('steps.tokenCacheRead')}: <strong>{step.usage.cache_read_input_tokens}</strong></div>
+                        <div>{t('steps.tokenCacheCreate')}: <strong>{step.usage.cache_creation_input_tokens}</strong></div>
                       </div>
                     </div>
                   )}

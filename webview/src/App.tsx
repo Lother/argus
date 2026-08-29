@@ -100,10 +100,10 @@ function App() {
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
-    if (sec < 60) return `${sec}s`;
+    if (sec < 60) return t('fmt.durationSec', { value: sec });
     const min = Math.floor(sec / 60);
     const remainder = sec % 60;
-    return `${min}m ${remainder}s`;
+    return t('fmt.durationMinSec', { minutes: min, seconds: remainder });
   };
 
   return (
@@ -115,10 +115,11 @@ function App() {
           <span className="meta-badge">{formatModel(session.model)}</span>
           <span>{formatDuration(session.durationMs)}</span>
           <span className="meta-dim">
-            {flatSteps.length} steps
-            {session.subagents.length > 0 && ` · ${session.subagents.length} agents`}
+            {t('app.stepCount', { count: flatSteps.length })}
+            {session.subagents.length > 0 &&
+              ` · ${t('app.agentCount', { count: session.subagents.length })}`}
           </span>
-          {isLive && <span className="live-badge"><span className="live-dot"></span>LIVE</span>}
+          {isLive && <span className="live-badge"><span className="live-dot"></span>{t('app.live')}</span>}
         </div>
       </div>
 
@@ -127,49 +128,49 @@ function App() {
           className={`tab ${activeTab === 'steps' ? 'active' : ''}`}
           onClick={() => setActiveTab('steps')}
         >
-          Steps ({flatSteps.length})
+          {t('app.tabSteps', { count: flatSteps.length })}
         </button>
         <button
           className={`tab ${activeTab === 'analysis' ? 'active' : ''}`}
           onClick={() => setActiveTab('analysis')}
         >
-          Analysis ({findingCount})
+          {t('app.tabAnalysis', { count: findingCount })}
         </button>
         <button
           className={`tab ${activeTab === 'cost' ? 'active' : ''}`}
           onClick={() => setActiveTab('cost')}
         >
-          Cost (${totalCost.toFixed(2)})
+          {t('app.tabCost', { cost: totalCost.toFixed(2) })}
         </button>
         <button
           className={`tab ${activeTab === 'flow' ? 'active' : ''}`}
           onClick={() => setActiveTab('flow')}
         >
-          Flow
+          {t('app.tabFlow')}
         </button>
         <button
           className={`tab ${activeTab === 'map' ? 'active' : ''}`}
           onClick={() => setActiveTab('map')}
         >
-          Map
+          {t('app.tabMap')}
         </button>
         <button
           className={`tab ${activeTab === 'context' ? 'active' : ''}`}
           onClick={() => setActiveTab('context')}
         >
-          Context
+          {t('app.tabContext')}
         </button>
         <button
           className={`tab ${activeTab === 'performance' ? 'active' : ''}`}
           onClick={() => setActiveTab('performance')}
         >
-          Performance
+          {t('app.tabPerformance')}
         </button>
         <button
           className={`tab ${activeTab === 'insights' ? 'active' : ''}`}
           onClick={() => setActiveTab('insights')}
         >
-          Insights
+          {t('app.tabInsights')}
         </button>
       </div>
 

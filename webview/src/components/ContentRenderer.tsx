@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
 import { Step } from '../types/session';
+import { t } from '../i18n';
 import './ContentRenderer.css';
 
 // ─── Markdown engine with code-block highlighting ───────────────────────
@@ -38,16 +39,18 @@ interface Props {
   step: Step;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  text: 'Text',
-  thinking: 'Thinking',
+// `step.type` values stay raw (they drive the `cr-${kind}` class); only the
+// human-readable label is localized.
+const KIND_LABEL_KEY: Record<string, string> = {
+  text: 'contentRenderer.kindText',
+  thinking: 'contentRenderer.kindThinking',
 };
 
 const ContentRenderer = ({ step }: Props) => {
   const [showRaw, setShowRaw] = useState(false);
   const content = step.content || '';
   const kind = step.type;
-  const label = KIND_LABEL[kind] || kind;
+  const label = KIND_LABEL_KEY[kind] ? t(KIND_LABEL_KEY[kind]) : kind;
 
   const html = useMemo(() => {
     if (!content) return '';
@@ -70,14 +73,14 @@ const ContentRenderer = ({ step }: Props) => {
             className={`cr-toggle-btn${!showRaw ? ' active' : ''}`}
             onClick={() => setShowRaw(false)}
           >
-            Pretty
+            {t('contentRenderer.pretty')}
           </button>
           <button
             type="button"
             className={`cr-toggle-btn${showRaw ? ' active' : ''}`}
             onClick={() => setShowRaw(true)}
           >
-            Raw
+            {t('contentRenderer.raw')}
           </button>
         </div>
       </div>

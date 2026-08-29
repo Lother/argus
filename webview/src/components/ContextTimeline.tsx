@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Step } from '../types/session';
+import { t } from '../i18n';
 
 interface Props {
   steps: Step[];
@@ -39,14 +40,16 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
   }, [steps, pressureZones]);
 
   if (data.length < 2) {
-    return <div className="context-timeline-empty">Not enough data to display timeline</div>;
+    return (
+      <div className="context-timeline-empty">{t('contextTimeline.notEnoughData')}</div>
+    );
   }
 
   const compactionSet = new Set(compactionPoints ?? []);
 
   return (
     <div className="context-timeline-container">
-      <h3 className="section-title">Token Timeline</h3>
+      <h3 className="section-title">{t('contextTimeline.title')}</h3>
       <div className="context-timeline-chart">
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }}>
@@ -93,7 +96,7 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
               strokeWidth={2.5}
               dot={{ fill: '#06b6d4', r: 4 }}
               activeDot={{ r: 6, onClick: (_e, payload: any) => onGoToStep?.(payload.payload.index) }}
-              name="Input"
+              name={t('contextTimeline.seriesInput')}
             />
             <Line
               type="monotone"
@@ -102,7 +105,7 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
               strokeWidth={2.5}
               dot={{ fill: '#8b5cf6', r: 4 }}
               activeDot={{ r: 6 }}
-              name="Output"
+              name={t('contextTimeline.seriesOutput')}
             />
             <Line
               type="monotone"
@@ -111,18 +114,18 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
               strokeWidth={2.5}
               dot={{ fill: '#5eead4', r: 4 }}
               activeDot={{ r: 6 }}
-              name="Cache"
+              name={t('contextTimeline.seriesCache')}
             />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
       <div className="token-legend">
-        <span className="token-legend-item"><span className="token-dot" style={{ background: '#06b6d4' }} />Input</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: '#8b5cf6' }} />Output</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: '#5eead4' }} />Cache</span>
+        <span className="token-legend-item"><span className="token-dot" style={{ background: '#06b6d4' }} />{t('contextTimeline.seriesInput')}</span>
+        <span className="token-legend-item"><span className="token-dot" style={{ background: '#8b5cf6' }} />{t('contextTimeline.seriesOutput')}</span>
+        <span className="token-legend-item"><span className="token-dot" style={{ background: '#5eead4' }} />{t('contextTimeline.seriesCache')}</span>
         {(compactionPoints?.length ?? 0) > 0 && (
-          <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />Compactions</span>
+          <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />{t('contextTimeline.legendCompactions')}</span>
         )}
       </div>
     </div>
