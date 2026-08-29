@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { t, getLocale } from '../i18n/vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ParserService } from '../services/parserService';
@@ -35,7 +36,7 @@ export class SessionWebviewProviderReact {
     // Load session data
     const sessionData = await this.loadSessionData(sessionId);
     if (!sessionData) {
-      vscode.window.showErrorMessage('Failed to load session data');
+      vscode.window.showErrorMessage(t('ext.loadFailed'));
       return;
     }
 
@@ -352,8 +353,9 @@ export class SessionWebviewProviderReact {
       vscode.Uri.file(path.join(webviewPath, 'assets', 'main.css'))
     );
 
+    const locale = getLocale();
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -363,6 +365,7 @@ export class SessionWebviewProviderReact {
   </head>
   <body>
     <div id="root"></div>
+    <script>window.__ARGUS_LOCALE__ = ${JSON.stringify(locale)};</script>
     <script src="${scriptUri}"></script>
   </body>
 </html>`;

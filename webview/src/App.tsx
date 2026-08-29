@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SessionDetail, flattenSessionSteps } from './types/session';
+import { t } from './i18n';
 import StepsTab from './components/StepsTab';
 import AnalysisTab from './components/AnalysisTab';
 import CostTab from './components/CostTab';
@@ -61,7 +62,7 @@ function App() {
     return (
       <div className="loading">
         <div className="spinner"></div>
-        <p>Loading session data...</p>
+        <p>{t('app.loading')}</p>
       </div>
     );
   }
@@ -69,7 +70,7 @@ function App() {
   if (!session) {
     return (
       <div className="error">
-        <p>No session data available</p>
+        <p>{t('app.noData')}</p>
       </div>
     );
   }

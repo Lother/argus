@@ -83,100 +83,100 @@
       "argus": [
         {
           "id": "argusSessionList",
-          "name": "Sessions",
+          "name": "%view.sessions.name%",
           "type": "webview",
-          "contextualTitle": "Claude Code Sessions"
+          "contextualTitle": "%view.sessions.contextualTitle%"
         }
       ]
     },
     "commands": [
       {
         "command": "argus.refreshSessions",
-        "title": "Refresh Sessions",
+        "title": "%command.refreshSessions.title%",
         "icon": "$(refresh)",
         "category": "Argus"
       },
       {
         "command": "argus.openSessionDetail",
-        "title": "Open Session Detail",
+        "title": "%command.openSessionDetail.title%",
         "category": "Argus"
       },
       {
         "command": "argus.openSessionTab",
-        "title": "Open Session Tab",
+        "title": "%command.openSessionTab.title%",
         "category": "Argus"
       },
       {
         "command": "argus.clearFilters",
-        "title": "Clear All Filters",
+        "title": "%command.clearFilters.title%",
         "icon": "$(clear-all)",
         "category": "Argus"
       },
       {
         "command": "argus.toggleModelOpus",
-        "title": "Toggle Opus Filter",
+        "title": "%command.toggleModelOpus.title%",
         "category": "Argus"
       },
       {
         "command": "argus.toggleModelSonnet",
-        "title": "Toggle Sonnet Filter",
+        "title": "%command.toggleModelSonnet.title%",
         "category": "Argus"
       },
       {
         "command": "argus.toggleModelHaiku",
-        "title": "Toggle Haiku Filter",
+        "title": "%command.toggleModelHaiku.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDateAll",
-        "title": "All Time",
+        "title": "%command.setDateAll.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate1h",
-        "title": "Last 1 Hour",
+        "title": "%command.setDate1h.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate24h",
-        "title": "Last 24 Hours",
+        "title": "%command.setDate24h.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate7d",
-        "title": "Last 7 Days",
+        "title": "%command.setDate7d.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDate30d",
-        "title": "Last 30 Days",
+        "title": "%command.setDate30d.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setDateCustom",
-        "title": "Custom Range...",
+        "title": "%command.setDateCustom.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupNone",
-        "title": "Flat List",
+        "title": "%command.setGroupNone.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupProject",
-        "title": "Group by Project",
+        "title": "%command.setGroupProject.title%",
         "category": "Argus"
       },
       {
         "command": "argus.setGroupModel",
-        "title": "Group by Model",
+        "title": "%command.setGroupModel.title%",
         "category": "Argus"
       }
     ],
     "submenus": [
       {
         "id": "argus.groupMenu",
-        "label": "Group Sessions",
+        "label": "%submenu.groupMenu.label%",
         "icon": "$(list-tree)"
       }
     ],
@@ -219,16 +219,22 @@
         "argus.scanDepth": {
           "type": "number",
           "default": 5,
-          "description": "Maximum directory depth for scanning .claude directories"
+          "description": "%config.scanDepth.description%"
         },
         "argus.language": {
           "type": "string",
-          "default": "en",
+          "default": "auto",
           "enum": [
+            "auto",
             "en",
-            "tr"
+            "zh-TW"
           ],
-          "description": "Language for analysis findings"
+          "enumDescriptions": [
+            "%config.language.auto%",
+            "English",
+            "繁體中文"
+          ],
+          "description": "%config.language.description%"
         }
       }
     }

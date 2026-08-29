@@ -8,6 +8,7 @@ import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
 import { FilterState, DEFAULT_FILTER_STATE, GroupMode, DatePreset, SessionSummary } from './types/models';
 import { getClaudeConfigDir } from './utils/claudePaths';
+import { t } from './i18n/vscode';
 
 export function activate(context: vscode.ExtensionContext) {
   // Initialize services
@@ -206,10 +207,10 @@ export function activate(context: vscode.ExtensionContext) {
             await discoveryService.refreshDiscovery();
             allSessions = await discoveryService.getSessionList();
             refreshList();
-            vscode.window.showInformationMessage(`Sessions refreshed (${allSessions.length} found)`);
+            vscode.window.showInformationMessage(t('ext.sessionsRefreshed', { count: allSessions.length }));
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage('Failed to refresh sessions: ' + msg);
+            vscode.window.showErrorMessage(t('ext.refreshFailed', { error: msg }));
           }
         }
       );
@@ -222,7 +223,7 @@ export function activate(context: vscode.ExtensionContext) {
         await webviewProvider.openSessionDetail(sessionId);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        vscode.window.showErrorMessage('Failed to open session: ' + msg);
+        vscode.window.showErrorMessage(t('ext.openFailed', { error: msg }));
       }
     })
   );
