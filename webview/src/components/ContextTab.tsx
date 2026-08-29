@@ -1,5 +1,6 @@
 import { Step, AnalysisResult } from '../types/session';
 import ContextTimeline from './ContextTimeline';
+import { t, locale } from '../i18n';
 import './ContextTab.css';
 
 interface Props {
@@ -37,22 +38,26 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
     <div className="context-tab">
       <div className="context-metrics">
         <div className="metric-card">
-          <div className="metric-label">Total Input</div>
-          <div className="metric-value">{totalInputTokens.toLocaleString()}</div>
-          <div className="metric-sub">{avgInputPerStep.toLocaleString()} avg/step</div>
+          <div className="metric-label">{t('context.totalInput')}</div>
+          <div className="metric-value">{totalInputTokens.toLocaleString(locale)}</div>
+          <div className="metric-sub">
+            {t('context.avgPerStep', { count: avgInputPerStep.toLocaleString(locale) })}
+          </div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Total Output</div>
-          <div className="metric-value">{totalOutputTokens.toLocaleString()}</div>
+          <div className="metric-label">{t('context.totalOutput')}</div>
+          <div className="metric-value">{totalOutputTokens.toLocaleString(locale)}</div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Cache Read</div>
-          <div className="metric-value">{totalCacheRead.toLocaleString()}</div>
-          <div className="metric-sub">{cacheEfficiency}% efficiency</div>
+          <div className="metric-label">{t('context.cacheRead')}</div>
+          <div className="metric-value">{totalCacheRead.toLocaleString(locale)}</div>
+          <div className="metric-sub">
+            {t('context.cacheEfficiency', { percent: cacheEfficiency })}
+          </div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Cache Write</div>
-          <div className="metric-value">{totalCacheCreate.toLocaleString()}</div>
+          <div className="metric-label">{t('context.cacheWrite')}</div>
+          <div className="metric-value">{totalCacheCreate.toLocaleString(locale)}</div>
         </div>
       </div>
 
@@ -64,12 +69,12 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
       />
 
       <div className="usage-bars-section">
-        <h3>Token Distribution</h3>
+        <h3>{t('context.tokenDistribution')}</h3>
         <div className="usage-bars">
           <div className="usage-bar-item">
             <div className="usage-bar-label">
-              <span>Input Tokens</span>
-              <strong>{totalInputTokens.toLocaleString()}</strong>
+              <span>{t('context.inputTokens')}</span>
+              <strong>{totalInputTokens.toLocaleString(locale)}</strong>
             </div>
             <div className="usage-bar-track">
               <div className="usage-bar-fill input" style={{ width: '100%' }} />
@@ -77,8 +82,8 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
           </div>
           <div className="usage-bar-item">
             <div className="usage-bar-label">
-              <span>Output Tokens</span>
-              <strong>{totalOutputTokens.toLocaleString()}</strong>
+              <span>{t('context.outputTokens')}</span>
+              <strong>{totalOutputTokens.toLocaleString(locale)}</strong>
             </div>
             <div className="usage-bar-track">
               <div
@@ -89,8 +94,8 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
           </div>
           <div className="usage-bar-item">
             <div className="usage-bar-label">
-              <span>Cache Read</span>
-              <strong>{totalCacheRead.toLocaleString()}</strong>
+              <span>{t('context.cacheRead')}</span>
+              <strong>{totalCacheRead.toLocaleString(locale)}</strong>
             </div>
             <div className="usage-bar-track">
               <div
@@ -103,19 +108,19 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
       </div>
 
       <div className="peak-usage-section">
-        <h3>Peak Usage</h3>
+        <h3>{t('context.peakUsage')}</h3>
         <div className="peak-info">
           <div className="peak-stat">
-            <span>Highest Step:</span>
+            <span>{t('context.highestStep')}</span>
             <code>#{peakStep?.index}</code>
           </div>
           <div className="peak-stat">
-            <span>Total Tokens:</span>
-            <strong>{peakTokens.toLocaleString()}</strong>
+            <span>{t('context.totalTokens')}</span>
+            <strong>{peakTokens.toLocaleString(locale)}</strong>
           </div>
           {peakStep?.toolName && (
             <div className="peak-stat">
-              <span>Tool:</span>
+              <span>{t('context.tool')}</span>
               <code>{peakStep.toolName}</code>
             </div>
           )}

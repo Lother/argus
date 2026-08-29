@@ -1,6 +1,7 @@
 import { useEffect, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
 import { Step } from '../types/session';
+import { t } from '../i18n';
 import './DependencyGraph.css';
 
 interface Props {
@@ -162,7 +163,11 @@ const DependencyGraph = ({ steps, filesRead, filesWritten, onGoToStep }: Props) 
       .text((d: GraphNode) => {
         const reads = d.readCount || 0;
         const writes = d.writeCount || 0;
-        return `${d.name}\nReads: ${reads}\nWrites: ${writes}`;
+        return t('dependencyGraph.nodeTooltip', {
+          name: d.name,
+          reads,
+          writes,
+        });
       });
 
     // Simulation tick
@@ -202,8 +207,8 @@ const DependencyGraph = ({ steps, filesRead, filesWritten, onGoToStep }: Props) 
     return (
       <div className="dependency-graph-empty">
         <span className="empty-icon">🕸️</span>
-        <p>No file dependencies to visualize</p>
-        <span className="empty-hint">Files read or written will appear here</span>
+        <p>{t('dependencyGraph.emptyTitle')}</p>
+        <span className="empty-hint">{t('dependencyGraph.emptyHint')}</span>
       </div>
     );
   }
@@ -211,15 +216,15 @@ const DependencyGraph = ({ steps, filesRead, filesWritten, onGoToStep }: Props) 
   return (
     <div className="dependency-graph">
       <div className="graph-header">
-        <h3>📊 Interactive Dependency Graph</h3>
+        <h3>📊 {t('dependencyGraph.title')}</h3>
         <p className="graph-hint">
-          Drag nodes to explore • Scroll to zoom •
+          {t('dependencyGraph.hint')}
           <span className="color-legend">
             <span className="legend-item">
-              <span className="legend-dot read"></span>Read-only
+              <span className="legend-dot read"></span>{t('dependencyGraph.legendReadOnly')}
             </span>
             <span className="legend-item">
-              <span className="legend-dot write"></span>Written
+              <span className="legend-dot write"></span>{t('dependencyGraph.legendWritten')}
             </span>
           </span>
         </p>
@@ -229,11 +234,11 @@ const DependencyGraph = ({ steps, filesRead, filesWritten, onGoToStep }: Props) 
       </div>
       <div className="graph-stats">
         <div className="stat-item">
-          <span className="stat-label">Files:</span>
+          <span className="stat-label">{t('dependencyGraph.statFiles')}</span>
           <span className="stat-value">{graphData.nodes.length}</span>
         </div>
         <div className="stat-item">
-          <span className="stat-label">Operations:</span>
+          <span className="stat-label">{t('dependencyGraph.statOperations')}</span>
           <span className="stat-value">{graphData.links.length}</span>
         </div>
       </div>

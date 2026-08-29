@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Step, Finding } from '../types/session';
+import { t } from '../i18n';
 import './GlobalSearch.css';
 
 interface Props {
@@ -17,6 +18,14 @@ type SearchResult = {
   description: string;
   index?: number;
   stepIndex?: number;
+};
+
+// `result.type` stays raw — it drives the `search-result ${type}` /
+// `result-type-badge ${type}` classes. Only the badge caption is localized.
+const RESULT_TYPE_KEY: Record<SearchResult['type'], string> = {
+  step: 'globalSearch.typeStep',
+  finding: 'globalSearch.typeFinding',
+  file: 'globalSearch.typeFile',
 };
 
 const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, onClose }: Props) => {
@@ -49,7 +58,9 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
           } else if (step.toolInput.command) {
             description = step.toolInput.command.substring(0, 80);
           } else if (step.toolInput.pattern) {
-            description = `Pattern: ${step.toolInput.pattern}`;
+            description = t('globalSearch.patternPrefix', {
+              pattern: step.toolInput.pattern,
+            });
           }
         }
       }
@@ -71,7 +82,10 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
       if (matched) {
         matches.push({
           type: 'step',
-          title: `Step #${step.index} - ${step.toolName || step.type}`,
+          title: t('globalSearch.stepTitle', {
+            index: step.index,
+            tool: step.toolName || step.type,
+          }),
           description,
           stepIndex: step.index,
         });
@@ -123,7 +137,7 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
           <input
             type="text"
             className="search-input"
-            placeholder="Search steps, findings, files... (min 2 chars)"
+            placeholder={t('globalSearch.placeholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -137,9 +151,9 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
           {query.length < 2 ? (
             <div className="search-hint">
               <span className="hint-icon">🔍</span>
-              <p>Type at least 2 characters to search</p>
+              <p>{t('globalSearch.hint')}</p>
               <div className="hint-examples">
-                <span>Examples:</span>
+                <span>{t('globalSearch.examples')}</span>
                 <code>Read</code>
                 <code>file.ts</code>
                 <code>error</code>
@@ -148,12 +162,17 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
           ) : results.length === 0 ? (
             <div className="search-empty">
               <span className="empty-icon">❌</span>
-              <p>No results found for "{query}"</p>
+              <p>{t('globalSearch.noResults', { query })}</p>
             </div>
           ) : (
             <>
               <div className="results-count">
-                {results.length} result{results.length > 1 ? 's' : ''} found
+                {t(
+                  results.length > 1
+                    ? 'globalSearch.resultCountOther'
+                    : 'globalSearch.resultCountOne',
+                  { count: results.length }
+                )}
               </div>
               {results.map((result, idx) => (
                 <div
@@ -166,7 +185,7 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
                       {result.type === 'step' && '📝'}
                       {result.type === 'finding' && '🔍'}
                       {result.type === 'file' && '📄'}
-                      {result.type}
+                      {t(RESULT_TYPE_KEY[result.type])}
                     </span>
                     <span className="result-title">{result.title}</span>
                   </div>
@@ -178,8 +197,8 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
         </div>
 
         <div className="search-footer">
-          <kbd>ESC</kbd> to close
-          {results.length > 0 && <span>• Click on result to jump</span>}
+          <kbd>ESC</kbd> {t('globalSearch.escToClose')}
+          {results.length > 0 && <span>{t('globalSearch.clickToJump')}</span>}
         </div>
       </div>
     </div>

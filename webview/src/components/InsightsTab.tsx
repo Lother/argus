@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Step, AnalysisResult } from '../types/session';
+import { t } from '../i18n';
 import './InsightsTab.css';
 
 interface Props {
@@ -40,8 +41,8 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'optimization',
         icon: '💡',
-        title: `Heavy File Re-reading Detected`,
-        description: `${fileName} was read ${count} times. Consider implementing a caching strategy or breaking down the task to reduce redundant reads.`,
+        title: t('insights.duplicateReadsTitle'),
+        description: t('insights.duplicateReadsDesc', { file: fileName, count }),
         potentialSavings: 0.15 * (count - 1),
       });
     }
@@ -53,8 +54,11 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'warning',
         icon: '🔁',
-        title: `${retryLoops.length} Retry Loop${retryLoops.length > 1 ? 's' : ''} Detected`,
-        description: `Operations were retried multiple times before succeeding. Consider adding error handling, validation, or breaking complex operations into smaller steps.`,
+        title: t(
+          retryLoops.length > 1 ? 'insights.retryLoopTitleOther' : 'insights.retryLoopTitleOne',
+          { count: retryLoops.length }
+        ),
+        description: t('insights.retryLoopDesc'),
         potentialSavings: totalWasted,
         affectedSteps: retryLoops.flatMap(f => f.affectedSteps || []),
       });
@@ -66,8 +70,8 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'warning',
         icon: '⚠️',
-        title: 'High Context Pressure Detected',
-        description: `Token usage exceeded healthy thresholds during execution. Consider breaking the task into smaller sub-tasks or using subagents to manage context more efficiently.`,
+        title: t('insights.contextPressureTitle'),
+        description: t('insights.contextPressureDesc'),
         affectedSteps: pressureFindings.flatMap(f => f.affectedSteps || []),
       });
     }
@@ -79,8 +83,18 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'info',
         icon: '🗜️',
-        title: `${compactionFindings.length} Context Compaction${compactionFindings.length > 1 ? 's' : ''} Occurred`,
-        description: `Context window was compacted to free up space. ${totalWasted > 0 ? `$${totalWasted.toFixed(4)} was spent re-reading files after compaction.` : 'No files needed to be re-read.'}`,
+        title: t(
+          compactionFindings.length > 1
+            ? 'insights.compactionTitleOther'
+            : 'insights.compactionTitleOne',
+          { count: compactionFindings.length }
+        ),
+        description: t('insights.compactionDesc', {
+          detail:
+            totalWasted > 0
+              ? t('insights.compactionDetailWasted', { cost: totalWasted.toFixed(4) })
+              : t('insights.compactionDetailClean'),
+        }),
         potentialSavings: totalWasted,
         affectedSteps: compactionFindings.flatMap(f => f.affectedSteps || []),
       });
@@ -92,15 +106,17 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'success',
         icon: '✨',
-        title: 'Excellent Efficiency',
-        description: `This session achieved ${efficiency.toFixed(1)}% efficiency with minimal wasted operations. Well-structured prompts and clear requirements contributed to this success.`,
+        title: t('insights.excellentEfficiencyTitle'),
+        description: t('insights.excellentEfficiencyDesc', {
+          percent: efficiency.toFixed(1),
+        }),
       });
     } else if (efficiency < 70) {
       results.push({
         type: 'warning',
         icon: '📉',
-        title: 'Low Efficiency Detected',
-        description: `Efficiency is ${efficiency.toFixed(1)}%. Significant resources were wasted on failed operations or redundant work. Review findings for specific optimization opportunities.`,
+        title: t('insights.lowEfficiencyTitle'),
+        description: t('insights.lowEfficiencyDesc', { percent: efficiency.toFixed(1) }),
         potentialSavings: analysis?.wastedCost || 0,
       });
     }
@@ -113,15 +129,15 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         results.push({
           type: 'success',
           icon: '💾',
-          title: 'Effective Cache Utilization',
-          description: `${ratio}% of tokens were served from cache, reducing costs significantly. The LLM effectively reused context from previous steps.`,
+          title: t('insights.effectiveCacheTitle'),
+          description: t('insights.effectiveCacheDesc', { percent: ratio }),
         });
       } else {
         results.push({
           type: 'info',
           icon: '💾',
-          title: 'Low Cache Hit Rate',
-          description: `Only ${ratio}% cache hit rate. This might indicate frequent context changes or insufficient context reuse opportunities.`,
+          title: t('insights.lowCacheTitle'),
+          description: t('insights.lowCacheDesc', { percent: ratio }),
         });
       }
     }
@@ -132,8 +148,8 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'info',
         icon: '✏️',
-        title: 'High Number of Edits',
-        description: `${editSteps.length} file edits were performed. Consider if some edits could be batched together or if the initial approach could be better planned to reduce iterations.`,
+        title: t('insights.manyEditsTitle'),
+        description: t('insights.manyEditsDesc', { count: editSteps.length }),
       });
     }
 
@@ -144,8 +160,13 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       results.push({
         type: 'warning',
         icon: '🐚',
-        title: `${bashFailures.length} Failed Bash Command${bashFailures.length > 1 ? 's' : ''}`,
-        description: `Command failures often indicate environment issues, missing dependencies, or incorrect assumptions. Review failed commands and consider adding validation steps.`,
+        title: t(
+          bashFailures.length > 1
+            ? 'insights.failedBashTitleOther'
+            : 'insights.failedBashTitleOne',
+          { count: bashFailures.length }
+        ),
+        description: t('insights.failedBashDesc'),
         affectedSteps: bashFailures.map(s => s.index),
       });
     }
@@ -157,15 +178,22 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         results.push({
           type: 'optimization',
           icon: '📖',
-          title: 'Read-Heavy Operation',
-          description: `${filesRead.length} files read vs ${filesWritten.length} written (${ratio.toFixed(1)}:1 ratio). This suggests significant analysis/research work. Consider if some reads could be reduced.`,
+          title: t('insights.readHeavyTitle'),
+          description: t('insights.readHeavyDesc', {
+            read: filesRead.length,
+            written: filesWritten.length,
+            ratio: ratio.toFixed(1),
+          }),
         });
       } else if (ratio < 2) {
         results.push({
           type: 'info',
           icon: '✍️',
-          title: 'Write-Heavy Operation',
-          description: `${filesWritten.length} files written vs ${filesRead.length} read. This indicates a creative/generative task with minimal reference to existing code.`,
+          title: t('insights.writeHeavyTitle'),
+          description: t('insights.writeHeavyDesc', {
+            written: filesWritten.length,
+            read: filesRead.length,
+          }),
         });
       }
     }
@@ -182,13 +210,13 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       <p className="insight-description">{insight.description}</p>
       {insight.potentialSavings !== undefined && insight.potentialSavings > 0 && (
         <div className="insight-savings">
-          <span className="savings-label">Potential Savings:</span>
+          <span className="savings-label">{t('insights.potentialSavings')}</span>
           <span className="savings-value">${insight.potentialSavings.toFixed(4)}</span>
         </div>
       )}
       {insight.affectedSteps && insight.affectedSteps.length > 0 && (
         <div className="insight-steps">
-          <span className="steps-label">Steps:</span>
+          <span className="steps-label">{t('insights.steps')}</span>
           {insight.affectedSteps.slice(0, 10).map(idx => (
             <button key={idx} className="step-badge" onClick={() => onGoToStep(idx)}>
               #{idx}
@@ -207,8 +235,8 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
       {insights.length === 0 ? (
         <div className="no-insights">
           <span className="no-insights-icon">✨</span>
-          <h3>No Special Insights</h3>
-          <p>This session ran smoothly without notable patterns or optimization opportunities.</p>
+          <h3>{t('insights.emptyTitle')}</h3>
+          <p>{t('insights.emptyDesc')}</p>
         </div>
       ) : (
         <div className="insights-grid">

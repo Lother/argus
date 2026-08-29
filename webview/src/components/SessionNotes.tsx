@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { t, locale } from '../i18n';
 import './SessionNotes.css';
 
 interface Props {
@@ -54,34 +55,33 @@ const SessionNotes = ({ sessionId }: Props) => {
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
-    return date.toLocaleString('tr-TR', {
+    return date.toLocaleString(locale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false,
     });
   };
 
   return (
     <div className={`session-notes ${isExpanded ? 'expanded' : ''}`}>
       <button className="notes-toggle" onClick={() => setIsExpanded(!isExpanded)}>
-        📝 Notes ({notes.length})
+        📝 {t('notes.toggle', { count: notes.length })}
       </button>
 
       {isExpanded && (
         <div className="notes-panel">
           <div className="notes-header">
-            <h3>Session Notes</h3>
-            <p className="notes-subtitle">
-              Add notes and observations about this session
-            </p>
+            <h3>{t('notes.title')}</h3>
+            <p className="notes-subtitle">{t('notes.subtitle')}</p>
           </div>
 
           <div className="notes-input-section">
             <textarea
               className="notes-textarea"
-              placeholder="Add a note..."
+              placeholder={t('notes.placeholder')}
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
               onKeyDown={(e) => {
@@ -91,13 +91,13 @@ const SessionNotes = ({ sessionId }: Props) => {
               }}
             />
             <div className="notes-input-footer">
-              <span className="notes-hint">Ctrl+Enter to save</span>
+              <span className="notes-hint">{t('notes.saveHint')}</span>
               <button
                 className="notes-add-btn"
                 onClick={addNote}
                 disabled={!newNote.trim()}
               >
-                Add Note
+                {t('notes.add')}
               </button>
             </div>
           </div>
@@ -106,8 +106,8 @@ const SessionNotes = ({ sessionId }: Props) => {
             {notes.length === 0 ? (
               <div className="notes-empty">
                 <span className="empty-icon">📋</span>
-                <p>No notes yet</p>
-                <span className="empty-hint">Add your first note above</span>
+                <p>{t('notes.empty')}</p>
+                <span className="empty-hint">{t('notes.emptyHint')}</span>
               </div>
             ) : (
               notes.slice().reverse().map(note => (
@@ -118,7 +118,7 @@ const SessionNotes = ({ sessionId }: Props) => {
                     <button
                       className="note-delete"
                       onClick={() => deleteNote(note.id)}
-                      title="Delete note"
+                      title={t('notes.delete')}
                     >
                       🗑️
                     </button>

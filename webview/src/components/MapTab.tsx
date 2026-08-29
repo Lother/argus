@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { Step } from '../types/session';
+import { t } from '../i18n';
 import './MapTab.css';
 
 export interface DirEntry {
@@ -189,7 +190,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
 
   // Build the tree up to the current step
   const { root, lastRevealedPath, lastAppliedStep } = useMemo(() => {
-    const rootName = cwd ? cwd.split('/').filter(Boolean).pop() || cwd : 'project';
+    const rootName = cwd ? cwd.split('/').filter(Boolean).pop() || cwd : t('map.rootFallback');
     const rootNode: TreeNode = {
       name: rootName,
       path: '',
@@ -611,11 +612,11 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
     nodes.append('title').text((d) => {
       const data = d.data;
       const lines = [data.path || data.name];
-      if (data.readCount) lines.push(`Reads: ${data.readCount}`);
-      if (data.writeCount) lines.push(`Writes: ${data.writeCount}`);
-      if (data.agentTouched) lines.push('Touched by sub-agent');
+      if (data.readCount) lines.push(t('map.tooltipReads', { count: data.readCount }));
+      if (data.writeCount) lines.push(t('map.tooltipWrites', { count: data.writeCount }));
+      if (data.agentTouched) lines.push(t('map.tooltipAgentTouched'));
       if (data.revealedAt >= 0) {
-        lines.push(`Click → step #${data.revealedAt}`);
+        lines.push(t('map.tooltipClickStep', { index: data.revealedAt }));
       }
       return lines.join('\n');
     });
@@ -646,7 +647,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
       .attr('x', AGENT_PILL_W / 2)
       .attr('y', AGENT_PILL_H / 2 + 3.6)
       .attr('text-anchor', 'middle')
-      .text('AGENT');
+      .text(t('map.agentPill'));
 
     // Apply bounce animation to fresh nodes via D3 transition
     if (freshPaths.size > 0) {
@@ -731,7 +732,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
     return (
       <div className="map-empty">
         <span className="map-empty-icon">🗺️</span>
-        <p>No working directory available for this session</p>
+        <p>{t('map.emptyState')}</p>
       </div>
     );
   }
@@ -746,7 +747,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
               if (currentStep >= steps.length) setCurrentStep(0);
               setPlaying((p) => !p);
             }}
-            title={playing ? 'Pause' : 'Play'}
+            title={t(playing ? 'map.pause' : 'map.play')}
           >
             {playing ? '⏸' : '▶'}
           </button>
@@ -756,7 +757,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
               setPlaying(false);
               setCurrentStep(0);
             }}
-            title="Reset to start"
+            title={t('map.resetToStart')}
           >
             ⏮
           </button>
@@ -766,7 +767,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
               setPlaying(false);
               setCurrentStep(steps.length);
             }}
-            title="Jump to end"
+            title={t('map.jumpToEnd')}
           >
             ⏭
           </button>
@@ -791,8 +792,15 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
                   style={{ left: `${left}%`, width: `${width}%` }}
                   title={
                     r.start === r.end
-                      ? `${r.kind} at step ${r.start}`
-                      : `${r.kind} during steps ${r.start}–${r.end}`
+                      ? t('map.markAtStep', {
+                          kind: t(r.kind === 'read' ? 'map.kindRead' : 'map.kindWrite'),
+                          step: r.start,
+                        })
+                      : t('map.markDuringSteps', {
+                          kind: t(r.kind === 'read' ? 'map.kindRead' : 'map.kindWrite'),
+                          start: r.start,
+                          end: r.end,
+                        })
                   }
                 />
               );
@@ -819,14 +827,14 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
             className="map-speed"
             value={speedMs}
             onChange={(e) => setSpeedMs(Number(e.target.value))}
-            title="Playback speed"
+            title={t('map.playbackSpeed')}
           >
             <option value={800}>0.5×</option>
             <option value={350}>1×</option>
             <option value={150}>2×</option>
             <option value={60}>4×</option>
           </select>
-          <button className="map-btn" onClick={resetView} title="Reset view">
+          <button className="map-btn" onClick={resetView} title={t('map.resetView')}>
             ⊕
           </button>
         </div>
@@ -836,35 +844,35 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
         <svg ref={svgRef} className="map-svg" />
         <div className="map-legend">
           <span className="map-legend-item">
-            <span className="map-legend-dot dim" /> not visited
+            <span className="map-legend-dot dim" /> {t('map.legendNotVisited')}
           </span>
           <span className="map-legend-item">
-            <span className="map-legend-dot read" /> read
+            <span className="map-legend-dot read" /> {t('map.legendRead')}
           </span>
           <span className="map-legend-item">
-            <span className="map-legend-dot written" /> written
+            <span className="map-legend-dot written" /> {t('map.legendWritten')}
           </span>
           <span className="map-legend-item">
-            <span className="map-legend-dot agent" /> sub-agent
+            <span className="map-legend-dot agent" /> {t('map.legendSubagent')}
           </span>
         </div>
       </div>
 
       <div className="map-stats">
         <div className="map-stat">
-          <span className="map-stat-label">Nodes</span>
+          <span className="map-stat-label">{t('map.statNodes')}</span>
           <span className="map-stat-value">{stats.revealed}</span>
         </div>
         <div className="map-stat">
-          <span className="map-stat-label">Read</span>
+          <span className="map-stat-label">{t('map.statRead')}</span>
           <span className="map-stat-value map-stat-read">{stats.read}</span>
         </div>
         <div className="map-stat">
-          <span className="map-stat-label">Written</span>
+          <span className="map-stat-label">{t('map.statWritten')}</span>
           <span className="map-stat-value map-stat-written">{stats.written}</span>
         </div>
         <div className="map-stat map-stat-cwd" title={cwd}>
-          <span className="map-stat-label">cwd</span>
+          <span className="map-stat-label">{t('map.statCwd')}</span>
           <span className="map-stat-value">{truncateMiddle(cwd.split('/').slice(-2).join('/'), 32)}</span>
         </div>
       </div>
