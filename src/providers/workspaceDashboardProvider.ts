@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AggregationService } from '../services/aggregationService';
+import { t, getLocale } from '../i18n/vscode';
 
 type WindowKey = '7d' | '30d' | 'mtd' | 'all';
 
@@ -38,7 +39,7 @@ export class WorkspaceDashboardProvider {
 
     const panel = vscode.window.createWebviewPanel(
       'argusWorkspaceDashboard',
-      'Argus: Workspace',
+      t('ext.workspaceTitle'),
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -50,12 +51,15 @@ export class WorkspaceDashboardProvider {
 
     const webview = panel.webview;
     const webviewRoot = vscode.Uri.file(path.join(context.extensionPath, 'out', 'webview'));
-    const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, 'assets', 'main.css'));
+    // The dashboard's styles live in the shared `global.css` chunk (Vite splits
+    // it out because both webview entries import it), not in `main.css`.
+    const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, 'assets', 'global.css'));
+    const locale = getLocale();
     const jsUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewRoot, 'assets', 'workspace.js'));
     const csp = `default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src ${webview.cspSource} data:; script-src ${webview.cspSource};`;
 
     webview.html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
@@ -85,7 +89,7 @@ export class WorkspaceDashboardProvider {
         webview.postMessage({ type: 'workspaceData', data });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage('Argus workspace aggregation failed: ' + msg);
+        vscode.window.showErrorMessage(t('ext.workspaceAggregationFailed', { error: msg }));
       } finally {
         busy = false;
       }

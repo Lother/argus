@@ -19,6 +19,7 @@
   "command.setGroupNone.title": "Flat List",
   "command.setGroupProject.title": "Group by Project",
   "command.setGroupModel.title": "Group by Model",
+  "command.openWorkspaceDashboard.title": "Open Workspace Dashboard",
   "config.scanDepth.description": "Maximum directory depth for scanning .claude directories",
   "config.language.description": "UI language for the Argus sidebar, session viewer, and analysis findings",
   "config.language.auto": "Follow the VS Code display language"

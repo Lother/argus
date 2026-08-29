@@ -6,6 +6,8 @@ export const extZhTW: Messages = {
   'ext.refreshFailed': '重新整理工作階段失敗：{error}',
   'ext.openFailed': '開啟工作階段失敗：{error}',
   'ext.loadFailed': '載入工作階段資料失敗',
+  'ext.workspaceTitle': 'Argus：工作區',
+  'ext.workspaceAggregationFailed': 'Argus 工作區彙總失敗：{error}',
   'ext.refreshingSessions': 'Argus：正在重新整理工作階段…',
   'ext.statusBarTooltip': 'Claude Code 工作階段除錯工具',
 

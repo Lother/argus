@@ -19,6 +19,7 @@
   "command.setGroupNone.title": "平面清單",
   "command.setGroupProject.title": "依專案分組",
   "command.setGroupModel.title": "依模型分組",
+  "command.openWorkspaceDashboard.title": "開啟工作區儀表板",
   "config.scanDepth.description": "掃描 .claude 目錄的最大目錄深度",
   "config.language.description": "Argus 側邊欄、工作階段檢視器與分析結果的介面語言",
   "config.language.auto": "跟隨 VS Code 顯示語言"

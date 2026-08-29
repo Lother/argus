@@ -179,7 +179,7 @@
       },
       {
         "command": "argus.openWorkspaceDashboard",
-        "title": "Open Workspace Dashboard",
+        "title": "%command.openWorkspaceDashboard.title%",
         "icon": "$(dashboard)",
         "category": "Argus"
       }

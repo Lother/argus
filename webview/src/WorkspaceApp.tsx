@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
+import { t, locale } from './i18n';
 import './styles/global.css';
 
 // Shape matches src/services/aggregationService.ts WorkspaceAggregate
@@ -17,6 +18,7 @@ interface PerDayAggregate {
 }
 interface PerProjectAggregate {
   project: string;
+  projectDir: string;
   sessionCount: number;
   inputTokens: number;
   outputTokens: number;
@@ -67,6 +69,7 @@ type Tab = 'week' | 'projects';
 type WindowKey = '7d' | '30d' | 'mtd' | 'all';
 
 const MODEL_COLORS: Record<string, string> = {
+  fable: '#f472b6',
   opus: '#c084fc',
   sonnet: '#60a5fa',
   haiku: '#34d399',
@@ -75,11 +78,29 @@ const MODEL_COLORS: Record<string, string> = {
 
 function normalizeModel(m: string): string {
   if (!m) return 'unknown';
+  if (m.includes('fable')) return 'fable';
   if (m.includes('opus')) return 'opus';
   if (m.includes('sonnet')) return 'sonnet';
   if (m.includes('haiku')) return 'haiku';
   return 'unknown';
 }
+
+// Display-only labels; the normalized key stays raw (it selects the colour).
+const MODEL_LABEL_KEY: Record<string, string> = {
+  fable: 'workspace.modelFable',
+  opus: 'workspace.modelOpus',
+  sonnet: 'workspace.modelSonnet',
+  haiku: 'workspace.modelHaiku',
+  unknown: 'workspace.modelUnknown',
+};
+const modelLabel = (key: string): string => t(MODEL_LABEL_KEY[key] ?? 'workspace.modelUnknown');
+
+const WINDOW_LABEL_KEY: Record<WindowKey, string> = {
+  '7d': 'workspace.window7d',
+  '30d': 'workspace.window30d',
+  mtd: 'workspace.windowMtd',
+  all: 'workspace.windowAll',
+};
 
 function fmtUSD(n: number): string {
   if (n >= 100) return `$${n.toFixed(0)}`;
@@ -96,23 +117,17 @@ function fmtTokens(n: number): string {
 function fmtDate(iso: string): string {
   // "2026-05-26" -> "May 26"
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 function fmtRelative(ts: number): string {
   const diff = Date.now() - ts;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
-  return `${Math.round(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return t('workspace.justNow');
+  if (diff < 3_600_000) return t('workspace.minutesAgo', { n: Math.round(diff / 60_000) });
+  if (diff < 86_400_000) return t('workspace.hoursAgo', { n: Math.round(diff / 3_600_000) });
+  return t('workspace.daysAgo', { n: Math.round(diff / 86_400_000) });
 }
 
-function fmtProject(project: string): string {
-  // discoveryService stores project as the directory slug "C--Users-mered-..."
-  // -> trim to last path token for readability.
-  const parts = project.replace(/^C--/, '').split('-');
-  return parts.slice(-3).join('-') || project;
-}
 
 export default function WorkspaceApp() {
   const [data, setData] = useState<WorkspaceAggregate | null>(null);
@@ -164,20 +179,28 @@ export default function WorkspaceApp() {
 
   const modelPieData = useMemo(() => {
     if (!data) return [];
-    return data.perModel.map((m) => ({
-      name: normalizeModel(m.model),
-      fullModel: m.model,
-      value: m.totalCost,
-    }));
+    // Merge model versions (e.g. opus-5 + opus-4-8) into one slice per family.
+    const byFamily = new Map<string, { name: string; fullModel: string; value: number }>();
+    for (const m of data.perModel) {
+      const name = normalizeModel(m.model);
+      const cur = byFamily.get(name);
+      if (cur) {
+        cur.value += m.totalCost;
+        cur.fullModel += `, ${m.model}`;
+      } else {
+        byFamily.set(name, { name, fullModel: m.model, value: m.totalCost });
+      }
+    }
+    return Array.from(byFamily.values()).sort((a, b) => b.value - a.value);
   }, [data]);
 
   return (
     <div className="ws-root">
       <header className="ws-header">
         <div className="ws-title">
-          <span className="ws-title-main">Workspace</span>
+          <span className="ws-title-main">{t('workspace.title')}</span>
           <span className="ws-title-sep">·</span>
-          <span className="ws-title-sub">Cross-session token + cost rollup</span>
+          <span className="ws-title-sub">{t('workspace.subtitle')}</span>
         </div>
         <div className="ws-window">
           {(['7d', '30d', 'mtd', 'all'] as WindowKey[]).map((w) => (
@@ -187,10 +210,10 @@ export default function WorkspaceApp() {
               onClick={() => requestWindow(w)}
               type="button"
             >
-              {w === '7d' ? 'Last 7 days' : w === '30d' ? 'Last 30 days' : w === 'mtd' ? 'Month to date' : 'All time'}
+              {t(WINDOW_LABEL_KEY[w])}
             </button>
           ))}
-          <button className="ws-refresh" onClick={refresh} type="button" title="Re-scan all JSONLs">
+          <button className="ws-refresh" onClick={refresh} type="button" title={t('workspace.refreshTitle')}>
             ↻
           </button>
         </div>
@@ -198,10 +221,10 @@ export default function WorkspaceApp() {
 
       <nav className="ws-tabs">
         <button className={`ws-tab${tab === 'week' ? ' active' : ''}`} onClick={() => setTab('week')} type="button">
-          Window summary
+          {t('workspace.tabSummary')}
         </button>
         <button className={`ws-tab${tab === 'projects' ? ' active' : ''}`} onClick={() => setTab('projects')} type="button">
-          By project
+          {t('workspace.tabProjects')}
         </button>
       </nav>
 
@@ -209,7 +232,9 @@ export default function WorkspaceApp() {
         <div className="ws-loading">
           <div className="ws-spinner" />
           <div>
-            Scanning JSONLs{progress ? ` (${progress.done} / ${progress.total})` : ''}…
+            {progress
+              ? t('workspace.scanningProgress', { done: progress.done, total: progress.total })
+              : t('workspace.scanning')}
           </div>
         </div>
       )}
@@ -217,17 +242,17 @@ export default function WorkspaceApp() {
       {!loading && data && tab === 'week' && (
         <section className="ws-section">
           <div className="ws-stat-grid">
-            <Stat label="Total cost" value={fmtUSD(data.totalCost)} />
-            <Stat label="Input tokens" value={fmtTokens(data.totalInputTokens)} />
-            <Stat label="Output tokens" value={fmtTokens(data.totalOutputTokens)} />
-            <Stat label="Cache read" value={fmtTokens(data.totalCacheReadTokens)} />
-            <Stat label="Cache write" value={fmtTokens(data.totalCacheCreateTokens)} />
-            <Stat label="Sessions scanned" value={String(data.scannedFileCount)} />
+            <Stat label={t('workspace.statTotalCost')} value={fmtUSD(data.totalCost)} />
+            <Stat label={t('workspace.statInputTokens')} value={fmtTokens(data.totalInputTokens)} />
+            <Stat label={t('workspace.statOutputTokens')} value={fmtTokens(data.totalOutputTokens)} />
+            <Stat label={t('workspace.statCacheRead')} value={fmtTokens(data.totalCacheReadTokens)} />
+            <Stat label={t('workspace.statCacheWrite')} value={fmtTokens(data.totalCacheCreateTokens)} />
+            <Stat label={t('workspace.statSessions')} value={String(data.scannedFileCount)} />
           </div>
 
           <div className="ws-row">
             <div className="ws-card ws-card-chart">
-              <h3>Daily cost</h3>
+              <h3>{t('workspace.chartDailyCost')}</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={data.perDay} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.18)" />
@@ -253,7 +278,7 @@ export default function WorkspaceApp() {
             </div>
 
             <div className="ws-card ws-card-chart">
-              <h3>Spend by model</h3>
+              <h3>{t('workspace.chartByModel')}</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
@@ -278,29 +303,29 @@ export default function WorkspaceApp() {
                       fontSize: 12,
                     }}
                   />
-                  <Legend formatter={(v) => v.charAt(0).toUpperCase() + v.slice(1)} />
+                  <Legend formatter={(v) => modelLabel(String(v))} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           <div className="ws-card">
-            <h3>Top projects this window</h3>
+            <h3>{t('workspace.topProjects')}</h3>
             <table className="ws-table">
               <thead>
                 <tr>
-                  <th>Project</th>
-                  <th className="num">Sessions</th>
-                  <th className="num">Input</th>
-                  <th className="num">Output</th>
-                  <th className="num">Cache read</th>
-                  <th className="num">Cost</th>
+                  <th>{t('workspace.colProject')}</th>
+                  <th className="num">{t('workspace.colSessions')}</th>
+                  <th className="num">{t('workspace.colInput')}</th>
+                  <th className="num">{t('workspace.colOutput')}</th>
+                  <th className="num">{t('workspace.colCacheRead')}</th>
+                  <th className="num">{t('workspace.colCost')}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.perProject.slice(0, 5).map((p) => (
-                  <tr key={p.project}>
-                    <td title={p.project}>{fmtProject(p.project)}</td>
+                  <tr key={p.projectDir}>
+                    <td title={p.projectDir}>{p.project}</td>
                     <td className="num">{p.sessionCount}</td>
                     <td className="num">{fmtTokens(p.inputTokens)}</td>
                     <td className="num">{fmtTokens(p.outputTokens)}</td>
@@ -317,29 +342,29 @@ export default function WorkspaceApp() {
       {!loading && data && tab === 'projects' && (
         <section className="ws-section">
           <div className="ws-projectsort">
-            Sort by:&nbsp;
-            <button className={`ws-sortbtn${projectSort === 'cost' ? ' active' : ''}`} onClick={() => setProjectSort('cost')} type="button">Cost</button>
-            <button className={`ws-sortbtn${projectSort === 'sessions' ? ' active' : ''}`} onClick={() => setProjectSort('sessions')} type="button">Sessions</button>
-            <button className={`ws-sortbtn${projectSort === 'recent' ? ' active' : ''}`} onClick={() => setProjectSort('recent')} type="button">Most recent</button>
+            {t('workspace.sortBy')}&nbsp;
+            <button className={`ws-sortbtn${projectSort === 'cost' ? ' active' : ''}`} onClick={() => setProjectSort('cost')} type="button">{t('workspace.sortCost')}</button>
+            <button className={`ws-sortbtn${projectSort === 'sessions' ? ' active' : ''}`} onClick={() => setProjectSort('sessions')} type="button">{t('workspace.sortSessions')}</button>
+            <button className={`ws-sortbtn${projectSort === 'recent' ? ' active' : ''}`} onClick={() => setProjectSort('recent')} type="button">{t('workspace.sortRecent')}</button>
           </div>
           <div className="ws-card">
             <table className="ws-table">
               <thead>
                 <tr>
-                  <th>Project</th>
-                  <th className="num">Sessions</th>
-                  <th className="num">Input</th>
-                  <th className="num">Output</th>
-                  <th className="num">Cache R</th>
-                  <th className="num">Cache W</th>
-                  <th className="num">Cost</th>
-                  <th>Last activity</th>
+                  <th>{t('workspace.colProject')}</th>
+                  <th className="num">{t('workspace.colSessions')}</th>
+                  <th className="num">{t('workspace.colInput')}</th>
+                  <th className="num">{t('workspace.colOutput')}</th>
+                  <th className="num">{t('workspace.colCacheR')}</th>
+                  <th className="num">{t('workspace.colCacheW')}</th>
+                  <th className="num">{t('workspace.colCost')}</th>
+                  <th>{t('workspace.colLastActivity')}</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedProjects.map((p) => (
-                  <tr key={p.project}>
-                    <td title={p.project}>{fmtProject(p.project)}</td>
+                  <tr key={p.projectDir}>
+                    <td title={p.projectDir}>{p.project}</td>
                     <td className="num">{p.sessionCount}</td>
                     <td className="num">{fmtTokens(p.inputTokens)}</td>
                     <td className="num">{fmtTokens(p.outputTokens)}</td>
@@ -350,7 +375,7 @@ export default function WorkspaceApp() {
                   </tr>
                 ))}
                 {sortedProjects.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '20px', opacity: 0.6 }}>No projects in this window.</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '20px', opacity: 0.6 }}>{t('workspace.noProjects')}</td></tr>
                 )}
               </tbody>
             </table>

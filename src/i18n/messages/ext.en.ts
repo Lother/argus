@@ -11,6 +11,8 @@ export const extEn: Messages = {
   'ext.refreshFailed': 'Failed to refresh sessions: {error}',
   'ext.openFailed': 'Failed to open session: {error}',
   'ext.loadFailed': 'Failed to load session data',
+  'ext.workspaceTitle': 'Argus: Workspace',
+  'ext.workspaceAggregationFailed': 'Argus workspace aggregation failed: {error}',
   'ext.refreshingSessions': 'Argus: Refreshing sessions...',
   'ext.statusBarTooltip': 'Claude Code Session Debugger',
 

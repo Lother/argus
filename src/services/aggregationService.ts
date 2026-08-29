@@ -8,7 +8,8 @@ import { getClaudeConfigDir } from '../utils/claudePaths';
 export interface PerSessionAggregate {
   sessionId: string;
   filePath: string;
-  project: string;          // directory name under ~/.claude/projects/
+  project: string;          // human-readable project label (from the session's cwd, else the dir slug)
+  projectDir: string;       // directory name under ~/.claude/projects/
   model: string;            // primary model used
   firstTimestamp: number;   // ms
   lastTimestamp: number;    // ms
@@ -22,7 +23,8 @@ export interface PerSessionAggregate {
 }
 
 export interface PerProjectAggregate {
-  project: string;          // dir name
+  project: string;          // human-readable label
+  projectDir: string;       // dir name
   sessionCount: number;
   inputTokens: number;
   outputTokens: number;
@@ -75,6 +77,14 @@ interface FileCacheEntry {
   agg: PerSessionAggregate;
 }
 
+/** Same convention as DiscoveryService.humanProjectName: last two path segments. */
+function humanProjectName(pathStr: string): string {
+  const parts = pathStr.split(/[\\/]/).filter(p => p);
+  if (parts.length === 0) return pathStr;
+  if (parts.length <= 2) return parts.join('/');
+  return parts.slice(-2).join('/');
+}
+
 function isoLocalDate(ms: number): string {
   const d = new Date(ms);
   const y = d.getFullYear();
@@ -110,7 +120,8 @@ export class AggregationService {
     }
 
     const sessionId = path.basename(filePath, '.jsonl');
-    const project = path.basename(path.dirname(filePath));
+    const projectDir = path.basename(path.dirname(filePath));
+    let cwd = '';
     let model = 'unknown';
     let firstTimestamp = 0;
     let lastTimestamp = 0;
@@ -139,7 +150,14 @@ export class AggregationService {
       }
       // Anthropic API response objects in Claude Code JSONL have
       // message.model + message.usage on assistant responses.
+      if (!cwd && typeof evt.cwd === 'string' && evt.cwd) {
+        cwd = evt.cwd;
+      }
       const msg = evt.message;
+      // Claude Code inserts placeholder assistant turns with model "<synthetic>";
+      // they carry no billable usage and would otherwise be costed at the
+      // fallback price. ParserService skips them the same way.
+      if (msg?.model === '<synthetic>') continue;
       const usage = msg?.usage;
       if (msg?.model && typeof msg.model === 'string') {
         model = msg.model;
@@ -164,7 +182,8 @@ export class AggregationService {
     const agg: PerSessionAggregate = {
       sessionId,
       filePath,
-      project,
+      project: cwd ? humanProjectName(cwd) : projectDir,
+      projectDir,
       model,
       firstTimestamp,
       lastTimestamp: lastTimestamp || firstTimestamp,
@@ -250,8 +269,8 @@ export class AggregationService {
       day.sessionCount += 1;
       dayMap.set(iso, day);
 
-      const proj = projMap.get(s.project) || {
-        project: s.project, sessionCount: 0, inputTokens: 0, outputTokens: 0,
+      const proj = projMap.get(s.projectDir) || {
+        project: s.project, projectDir: s.projectDir, sessionCount: 0, inputTokens: 0, outputTokens: 0,
         cacheReadTokens: 0, cacheCreateTokens: 0, totalCost: 0, lastActivity: 0,
         modelBreakdown: {},
       };
@@ -263,7 +282,7 @@ export class AggregationService {
       proj.totalCost += s.totalCost;
       proj.lastActivity = Math.max(proj.lastActivity, s.lastTimestamp);
       proj.modelBreakdown[s.model] = (proj.modelBreakdown[s.model] || 0) + s.totalCost;
-      projMap.set(s.project, proj);
+      projMap.set(s.projectDir, proj);
 
       const m = modelMap.get(s.model) || {
         model: s.model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
@@ -313,22 +332,24 @@ export class AggregationService {
 
   private async _walkJsonl(root: string): Promise<string[]> {
     const out: string[] = [];
-    async function walk(dir: string, depth: number) {
-      if (depth > 4) return;
+    // Layout is ~/.claude/projects/<project-slug>/<sessionId>.jsonl. Sub-agent
+    // transcripts live deeper (<slug>/<sessionId>/subagents/*.jsonl) and are
+    // already accounted for by their parent session, so only descend one level.
+    let slugs: fs.Dirent[];
+    try {
+      slugs = await fs.promises.readdir(root, { withFileTypes: true });
+    } catch { return out; }
+    for (const slug of slugs) {
+      if (!slug.isDirectory()) continue;
+      const dir = path.join(root, slug.name);
       let entries: fs.Dirent[];
       try {
         entries = await fs.promises.readdir(dir, { withFileTypes: true });
-      } catch { return; }
+      } catch { continue; }
       for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) {
-          await walk(full, depth + 1);
-        } else if (e.isFile() && e.name.endsWith('.jsonl')) {
-          out.push(full);
-        }
+        if (e.isFile() && e.name.endsWith('.jsonl')) out.push(path.join(dir, e.name));
       }
     }
-    await walk(root, 0);
     return out;
   }
 }
