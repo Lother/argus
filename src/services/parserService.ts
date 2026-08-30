@@ -35,6 +35,11 @@ const INJECTED_BLOCK_RE = new RegExp(
 
 // A slash command is stored as its own little XML document. Rendered raw it
 // buries the one interesting part, so it collapses back to what was typed.
+// Background agents report completion through a queued `<task-notification>`
+// user message rather than the Task tool result.
+const TASK_NOTIFICATION_RE =
+  /<task-notification>[\s\S]*?<task-id>([^<]+)<\/task-id>[\s\S]*?<status>([^<]+)<\/status>[\s\S]*?<\/task-notification>/g;
+
 const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/;
 const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/;
 
@@ -420,6 +425,7 @@ export class ParserService {
     let startTime = new Date();
     let endTime = new Date();
     let totalCost = 0;
+    const finishedAgentIds = new Set<string>();
 
     // Track tool calls and their results. Two indexes: by the assistant
     // event's UUID (what `sourceToolAssistantUUID` points at) and by the
@@ -474,6 +480,14 @@ export class ParserService {
           Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result');
 
         if (!isToolResult) {
+          const raw = typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content.map((b: any) => (b?.type === 'text' ? b.text : '')).join('\n')
+              : '';
+          for (const m of raw.matchAll(TASK_NOTIFICATION_RE)) {
+            if (m[2].trim() !== 'running') finishedAgentIds.add(m[1].trim());
+          }
           const text = this.extractUserInput(content);
           // A pasted screenshot with no caption is a turn too: the message
           // carries an image block and nothing else, so keying the step off
@@ -773,6 +787,7 @@ export class ParserService {
       filesRead: Array.from(filesRead),
       filesWritten: Array.from(filesWritten),
       toolsUsed: Object.fromEntries(toolsUsed),
+      finishedAgentIds: Array.from(finishedAgentIds),
     };
   }
 
@@ -1032,6 +1047,7 @@ export class ParserService {
           stepCount: session.steps.length,
           totalCost: session.totalCost,
           steps: session.steps,
+          finishedAgentIds: session.finishedAgentIds,
         });
       }
     } catch (err) {
@@ -1054,10 +1070,17 @@ export class ParserService {
    *     fallback for older sessions written without meta.json. Claude Code has
    *     used both "Task" and "Agent" as the tool name for the same primitive.
    */
-  linkSubagentsToParents(steps: Step[], subagents: SubagentInfo[]): void {
+  linkSubagentsToParents(
+    steps: Step[],
+    subagents: SubagentInfo[],
+    finishedAgentIds: string[] = []
+  ): void {
     if (subagents.length === 0) return;
     const byId = new Map<string, SubagentInfo>();
     for (const s of subagents) byId.set(s.agentId, s);
+    // Notifications for nested agents land in the parent agent's transcript.
+    const finished = new Set<string>(finishedAgentIds);
+    for (const s of subagents) for (const id of s.finishedAgentIds ?? []) finished.add(id);
 
     for (const sub of subagents) {
       if (!sub.toolUseId) continue;
@@ -1078,6 +1101,17 @@ export class ParserService {
       } catch {
         // ignore unparseable results
       }
+    }
+
+    for (const sub of subagents) {
+      if (finished.has(sub.agentId)) { sub.finished = true; continue; }
+      if (typeof sub.parentStepIndex !== 'number') continue;
+      const parentSteps = sub.parentAgentId ? byId.get(sub.parentAgentId)?.steps : steps;
+      const spawner = parentSteps?.[sub.parentStepIndex];
+      if (!spawner) continue;
+      // A foreground Task blocks until the agent returns, so any result means
+      // done; a background one returns "async_launched" straight away.
+      sub.finished = !!spawner.toolResult && !spawner.toolResult.includes('async_launched');
     }
   }
 

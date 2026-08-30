@@ -274,6 +274,7 @@ export const webZhTW: Messages = {
   'steps.attachmentCountOne': '1 個附件',
   'steps.attachmentCountOther': '{count} 個附件',
   'steps.agentFallback': '代理',
+  'steps.agentStarting': '啟動中…',
   'steps.showAgentSteps': '顯示代理步驟',
   'steps.hideAgentSteps': '隱藏代理步驟',
   'steps.agentStepCount': '{count} 個代理步驟',

@@ -640,7 +640,7 @@ export class SessionWebviewProviderReact {
       session.subagents = subagents;
       // Link each subagent to the Task tool_use step that spawned it so the
       // webview can interleave its steps inline in the timeline.
-      this.parserService.linkSubagentsToParents(session.steps, subagents);
+      this.parserService.linkSubagentsToParents(session.steps, subagents, session.finishedAgentIds);
       console.log('✅ Subagents parsed:', subagents.length);
 
       // Run analysis

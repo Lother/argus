@@ -95,6 +95,12 @@ export interface SessionDetail {
   filesWritten: string[];
   toolsUsed: Record<string, number>;
   analysis?: AnalysisResult;
+  /**
+   * Agent ids whose `<task-notification>` (status completed/failed/…) has
+   * landed in this transcript. Background agents' Task rows get an immediate
+   * "async_launched" result, so this is the only completion signal for them.
+   */
+  finishedAgentIds?: string[];
 }
 
 export type StepType =
@@ -186,6 +192,14 @@ export interface SubagentInfo {
   totalCost: number;
   steps: Step[];
   analysis?: AnalysisResult;
+  /**
+   * False while the agent is still running: its Task row has no result yet,
+   * or only the "async_launched" placeholder of a background agent and no
+   * task-notification has arrived. Undefined when the spawner is unknown.
+   */
+  finished?: boolean;
+  /** See `SessionDetail.finishedAgentIds` — notifications seen in this agent's own transcript. */
+  finishedAgentIds?: string[];
 }
 
 /**

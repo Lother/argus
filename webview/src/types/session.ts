@@ -94,6 +94,8 @@ export interface Subagent {
   totalCost: number;
   steps: Step[];
   analysis?: AnalysisResult;
+  // False while the agent is still running (see host SubagentInfo.finished).
+  finished?: boolean;
 }
 
 /**

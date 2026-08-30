@@ -280,6 +280,7 @@ export const webEn: Messages = {
   'steps.attachmentCountOne': '1 attachment',
   'steps.attachmentCountOther': '{count} attachments',
   'steps.agentFallback': 'agent',
+  'steps.agentStarting': 'Starting…',
   'steps.showAgentSteps': 'Show agent steps',
   'steps.hideAgentSteps': 'Hide agent steps',
   'steps.agentStepCount': '{count} agent steps',

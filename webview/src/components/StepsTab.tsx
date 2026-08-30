@@ -381,6 +381,20 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     return m;
   }, [subagents, subagentById]);
 
+  // Agents still running (host-side `finished` flag: Task result for
+  // foreground agents, task-notification for background ones). Each gets a
+  // one-line status pinned above the list showing its latest step, and drops
+  // off once it finishes.
+  const activeAgents = useMemo(() => {
+    const out: { agent: Subagent; latest: Step | undefined }[] = [];
+    for (const a of subagents) {
+      if (a.finished !== false) continue;
+      const latest = a.steps.length ? a.steps[a.steps.length - 1] : undefined;
+      out.push({ agent: a, latest });
+    }
+    return out;
+  }, [subagents]);
+
   const toggleAgent = useCallback((agentId: string) => {
     setCollapsedAgents(prev => {
       const next = new Set(prev);
@@ -813,6 +827,39 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
       )}
 
       <div className="steps-scroll">
+        {activeAgents.length > 0 && (
+          <div className="steps-active-agents">
+            {activeAgents.map(({ agent, latest }) => {
+              const summary = latest ? getStepSummary(latest) : null;
+              return (
+                <div
+                  key={agent.agentId}
+                  className="steps-active-agent"
+                  title={agent.description || agent.prompt}
+                >
+                  <span className="steps-active-dot" />
+                  <span className="step-agent-badge">
+                    {agent.agentType || t('steps.agentFallback')}
+                  </span>
+                  <span className="step-agent-id">{agent.agentId}</span>
+                  {latest ? (
+                    <>
+                      <span className="step-time">{formatTime(latest.timestamp)}</span>
+                      <span className="step-type">{latest.toolName || latest.type}</span>
+                      {summary && (
+                        <span className={`step-summary${summary.mono ? ' mono' : ''}`}>
+                          {summary.text}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="step-summary">{t('steps.agentStarting')}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
         {filteredSteps.map((step, i) => {
           const k = keyOf(step);
