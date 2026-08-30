@@ -96,11 +96,13 @@ export interface SessionDetail {
   toolsUsed: Record<string, number>;
   analysis?: AnalysisResult;
   /**
-   * Agent ids whose `<task-notification>` (status completed/failed/…) has
-   * landed in this transcript. Background agents' Task rows get an immediate
-   * "async_launched" result, so this is the only completion signal for them.
+   * agentId → ISO time of the latest `<task-notification>` (status
+   * completed/failed/…) for it in this transcript. Background agents' Task
+   * rows get an immediate "async_launched" result, so this is the only
+   * completion signal for them. An agent resumed after the notification
+   * has steps newer than this time, which is how it counts as running again.
    */
-  finishedAgentIds?: string[];
+  agentFinishedAt?: Record<string, string>;
 }
 
 export type StepType =
@@ -194,12 +196,13 @@ export interface SubagentInfo {
   analysis?: AnalysisResult;
   /**
    * False while the agent is still running: its Task row has no result yet,
-   * or only the "async_launched" placeholder of a background agent and no
-   * task-notification has arrived. Undefined when the spawner is unknown.
+   * or only the "async_launched" placeholder of a background agent and its
+   * newest step is later than any completion signal. Undefined when the
+   * spawner is unknown.
    */
   finished?: boolean;
-  /** See `SessionDetail.finishedAgentIds` — notifications seen in this agent's own transcript. */
-  finishedAgentIds?: string[];
+  /** See `SessionDetail.agentFinishedAt` — notifications seen in this agent's own transcript. */
+  agentFinishedAt?: Record<string, string>;
 }
 
 /**

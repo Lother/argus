@@ -425,7 +425,15 @@ export class ParserService {
     let startTime = new Date();
     let endTime = new Date();
     let totalCost = 0;
-    const finishedAgentIds = new Set<string>();
+    const agentFinishedAt: Record<string, string> = {};
+    const noteNotifications = (text: string, timestamp: string) => {
+      for (const m of text.matchAll(TASK_NOTIFICATION_RE)) {
+        if (m[2].trim() === 'running') continue;
+        const id = m[1].trim();
+        const at = new Date(timestamp).toISOString();
+        if (!agentFinishedAt[id] || agentFinishedAt[id] < at) agentFinishedAt[id] = at;
+      }
+    };
 
     // Track tool calls and their results. Two indexes: by the assistant
     // event's UUID (what `sourceToolAssistantUUID` points at) and by the
@@ -485,9 +493,7 @@ export class ParserService {
             : Array.isArray(content)
               ? content.map((b: any) => (b?.type === 'text' ? b.text : '')).join('\n')
               : '';
-          for (const m of raw.matchAll(TASK_NOTIFICATION_RE)) {
-            if (m[2].trim() !== 'running') finishedAgentIds.add(m[1].trim());
-          }
+          noteNotifications(raw, event.timestamp);
           const text = this.extractUserInput(content);
           // A pasted screenshot with no caption is a turn too: the message
           // carries an image block and nothing else, so keying the step off
@@ -515,7 +521,16 @@ export class ParserService {
       // missing from the timeline, image and all. The harness queues its own
       // commands the same way (background-task notifications), but those are
       // `<task-notification>` wrappers that clean away to nothing.
+      // A notification absorbed mid-turn is never replayed as a user event —
+      // the enqueue record is the only place it appears.
+      if (event.type === 'queue-operation' && typeof (event as any).content === 'string') {
+        noteNotifications((event as any).content, event.timestamp);
+      }
+
       if (event.type === 'attachment' && event.attachment?.type === 'queued_command') {
+        if (typeof event.attachment.prompt === 'string') {
+          noteNotifications(event.attachment.prompt, event.timestamp);
+        }
         const text = this.extractUserInput(event.attachment.prompt);
         const attachments = claimAttachments(blobs, 'attachment.prompt');
         if (text || attachments.length > 0) {
@@ -787,7 +802,7 @@ export class ParserService {
       filesRead: Array.from(filesRead),
       filesWritten: Array.from(filesWritten),
       toolsUsed: Object.fromEntries(toolsUsed),
-      finishedAgentIds: Array.from(finishedAgentIds),
+      agentFinishedAt,
     };
   }
 
@@ -1047,7 +1062,7 @@ export class ParserService {
           stepCount: session.steps.length,
           totalCost: session.totalCost,
           steps: session.steps,
-          finishedAgentIds: session.finishedAgentIds,
+          agentFinishedAt: session.agentFinishedAt,
         });
       }
     } catch (err) {
@@ -1073,14 +1088,22 @@ export class ParserService {
   linkSubagentsToParents(
     steps: Step[],
     subagents: SubagentInfo[],
-    finishedAgentIds: string[] = []
+    agentFinishedAt: Record<string, string> = {}
   ): void {
     if (subagents.length === 0) return;
     const byId = new Map<string, SubagentInfo>();
     for (const s of subagents) byId.set(s.agentId, s);
-    // Notifications for nested agents land in the parent agent's transcript.
-    const finished = new Set<string>(finishedAgentIds);
-    for (const s of subagents) for (const id of s.finishedAgentIds ?? []) finished.add(id);
+    // Latest completion signal per agent. Notifications for nested agents
+    // land in the parent agent's transcript, so merge every level.
+    const finishedAt = new Map<string, string>();
+    const note = (id: string, at: string) => {
+      const cur = finishedAt.get(id);
+      if (!cur || cur < at) finishedAt.set(id, at);
+    };
+    for (const [id, at] of Object.entries(agentFinishedAt)) note(id, at);
+    for (const s of subagents) {
+      for (const [id, at] of Object.entries(s.agentFinishedAt ?? {})) note(id, at);
+    }
 
     for (const sub of subagents) {
       if (!sub.toolUseId) continue;
@@ -1104,15 +1127,30 @@ export class ParserService {
     }
 
     for (const sub of subagents) {
-      if (finished.has(sub.agentId)) { sub.finished = true; continue; }
       if (typeof sub.parentStepIndex !== 'number') continue;
       const parentSteps = sub.parentAgentId ? byId.get(sub.parentAgentId)?.steps : steps;
       const spawner = parentSteps?.[sub.parentStepIndex];
       if (!spawner) continue;
       // A foreground Task blocks until the agent returns, so any result means
       // done; a background one returns "async_launched" straight away.
-      sub.finished = !!spawner.toolResult && !spawner.toolResult.includes('async_launched');
+      if (spawner.toolResult && !spawner.toolResult.includes('async_launched')) {
+        sub.finished = true;
+        continue;
+      }
+      sub.finished = ParserService.finishedBy(sub, finishedAt.get(sub.agentId));
     }
+  }
+
+  /**
+   * A background agent is finished when a completion signal exists and no
+   * step of its own is newer — a resumed agent keeps appending steps after
+   * its notification, and counts as running again until the next one.
+   */
+  static finishedBy(sub: SubagentInfo, signalAt: string | undefined): boolean {
+    if (!signalAt) return false;
+    const last = sub.steps.length ? sub.steps[sub.steps.length - 1].timestamp : undefined;
+    if (!last) return true;
+    return new Date(last).toISOString() <= signalAt;
   }
 
   // Helper methods
