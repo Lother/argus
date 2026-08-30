@@ -135,6 +135,22 @@ function App() {
   // "is this session still running" check and the confirmation dialog — a
   // webview can't show one of its own, window.confirm is blocked here. It
   // closes this panel once the files are gone.
+  // Hide the pinned row at once; the host persists the mark and re-sends the
+  // session, which keeps it hidden across live reloads.
+  const markAgentFinished = (agentId: string) => {
+    setSession(prev =>
+      prev
+        ? {
+            ...prev,
+            subagents: prev.subagents.map(s =>
+              s.agentId === agentId ? { ...s, finished: true } : s
+            ),
+          }
+        : prev
+    );
+    window.vscodeApi?.postMessage({ type: 'markAgentFinished', agentId });
+  };
+
   const deleteSession = () => {
     window.vscodeApi?.postMessage({ type: 'deleteSession' });
   };
@@ -317,6 +333,7 @@ function App() {
             autoExpand={stepsAutoExpand}
             hideControls={searchCollapsed}
             onFilteredCountChange={setStepsFilteredCount}
+            onMarkAgentFinished={markAgentFinished}
           />
         )}
         {activeTab === 'analysis' && (

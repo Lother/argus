@@ -255,6 +255,24 @@
 .steps-active-agent .step-agent-badge { margin-left: 0; }
 .steps-active-agent .step-summary { flex: 1; white-space: nowrap; }
 
+.steps-active-done {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.steps-active-done:hover {
+  color: var(--status-success, #4ec9b0);
+  border-color: var(--status-success, #4ec9b0);
+}
+
 .steps-active-dot {
   flex-shrink: 0;
   width: 7px;

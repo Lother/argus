@@ -25,6 +25,9 @@ interface Props {
   // How many steps survive the current search/filters, reported up so the tab
   // header can show "Steps (13/55)". null while the tab is unmounted.
   onFilteredCountChange?: (count: number | null) => void;
+  // Manual "this agent is done" for agents whose completion never reached
+  // the transcript; removes the pinned status row.
+  onMarkAgentFinished?: (agentId: string) => void;
 }
 
 /* ── SVG icons ── */
@@ -305,7 +308,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange }: Props) => {
+const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onMarkAgentFinished }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -854,6 +857,15 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                     </>
                   ) : (
                     <span className="step-summary">{t('steps.agentStarting')}</span>
+                  )}
+                  {onMarkAgentFinished && (
+                    <button
+                      className="steps-active-done"
+                      title={t('steps.markAgentFinishedTitle')}
+                      onClick={() => onMarkAgentFinished(agent.agentId)}
+                    >
+                      ✓ {t('steps.markAgentFinished')}
+                    </button>
                   )}
                 </div>
               );

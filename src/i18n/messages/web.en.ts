@@ -281,6 +281,8 @@ export const webEn: Messages = {
   'steps.attachmentCountOther': '{count} attachments',
   'steps.agentFallback': 'agent',
   'steps.agentStarting': 'Starting…',
+  'steps.markAgentFinished': 'Mark finished',
+  'steps.markAgentFinishedTitle': 'Treat this agent as finished and unpin it',
   'steps.showAgentSteps': 'Show agent steps',
   'steps.hideAgentSteps': 'Hide agent steps',
   'steps.agentStepCount': '{count} agent steps',

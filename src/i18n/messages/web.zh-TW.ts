@@ -275,6 +275,8 @@ export const webZhTW: Messages = {
   'steps.attachmentCountOther': '{count} 個附件',
   'steps.agentFallback': '代理',
   'steps.agentStarting': '啟動中…',
+  'steps.markAgentFinished': '標記結束',
+  'steps.markAgentFinishedTitle': '將此代理視為已結束並從置頂移除',
   'steps.showAgentSteps': '顯示代理步驟',
   'steps.hideAgentSteps': '隱藏代理步驟',
   'steps.agentStepCount': '{count} 個代理步驟',
