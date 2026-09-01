@@ -308,12 +308,20 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
+// Identity that survives live renumbering. `globalIndex` is the position in
+// the interleaved flat list, so an agent step landing mid-list shifts every
+// number after it; the (owning transcript, local index) pair does not move,
+// because transcripts are append-only. Expansion state and React keys hang
+// off this, keeping an opened step opened — and native scroll anchoring
+// working — while numbers shift around it.
+const idOf = (step: Step): string => `${step.agentId ?? ''}:${step.index}`;
+
 const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onMarkAgentFinished }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
   // on arrival, and a changed setting doesn't strand stale expansions.
-  const [toggledSteps, setToggledSteps] = useState<Set<number>>(new Set());
+  const [toggledSteps, setToggledSteps] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [toolFilter, setToolFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
@@ -342,7 +350,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
   );
 
   const isStepExpanded = useCallback(
-    (step: Step) => isAutoExpanded(step) !== toggledSteps.has(keyOf(step)),
+    (step: Step) => isAutoExpanded(step) !== toggledSteps.has(idOf(step)),
     [isAutoExpanded, toggledSteps]
   );
 
@@ -460,13 +468,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     }
   }, [highlightStep, steps, collapsedAgents, isAutoExpanded]);
 
-  const toggleStep = (index: number) => {
+  const toggleStep = (id: string) => {
     setToggledSteps(prev => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
+      if (next.has(id)) {
+        next.delete(id);
       } else {
-        next.add(index);
+        next.add(id);
       }
       return next;
     });
@@ -875,6 +883,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
         {filteredSteps.map((step, i) => {
           const k = keyOf(step);
+          const id = idOf(step);
           const summary = getStepSummary(step);
           const isExpanded = isStepExpanded(step);
           const hasToolBody = !!(step.toolInput || step.toolResult);
@@ -912,7 +921,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
 
           return (
             <div
-              key={k}
+              key={id}
               style={{ '--depth': String(depth) } as React.CSSProperties}
               className={[
                 'step-item',
@@ -928,7 +937,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                 isLastAgentInRun ? 'step-agent-last' : '',
               ].filter(Boolean).join(' ')}
             >
-              <button className="step-header" onClick={() => toggleStep(k)}>
+              <button className="step-header" onClick={() => toggleStep(id)}>
                 {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
                 <div className="step-left">
                   <StepIcon step={step} />
