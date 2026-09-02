@@ -545,11 +545,17 @@ export function activate(context: vscode.ExtensionContext) {
     new vscode.RelativePattern(vscode.Uri.file(projectsDir), '**/*.jsonl')
   );
 
-  watcher.onDidCreate(async () => {
-    await discoveryService.refreshDiscovery();
-    searchService.invalidate();
-    allSessions = discoveryService.getSessionSummaries();
-    refreshList();
+  watcher.onDidCreate(uri => {
+    // Sub-agent and workflow transcripts appear constantly under a running
+    // session; they belong to a session we already index, so a cheap
+    // incremental refresh is enough. Only a genuinely new session file is
+    // worth a full (coalesced) discovery pass.
+    const sessionId = sessionIdForPath(uri.fsPath);
+    if (sessionId && discoveryService.hasSession(sessionId)) {
+      queueSessionRefresh(sessionId);
+    } else {
+      void ensureSessions();
+    }
   });
 
   watcher.onDidChange(uri => {
@@ -559,11 +565,8 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  watcher.onDidDelete(async () => {
-    await discoveryService.refreshDiscovery();
-    searchService.invalidate();
-    allSessions = discoveryService.getSessionSummaries();
-    refreshList();
+  watcher.onDidDelete(() => {
+    void ensureSessions();
   });
 
   context.subscriptions.push(watcher);

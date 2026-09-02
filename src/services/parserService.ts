@@ -292,13 +292,18 @@ export class ParserService {
           // Stop early once we have all the metadata we need, or once we are
           // deep enough that whatever is still missing is not coming.
           if ((model && prompt && cwd && aiTitle) || lines >= HEAD_SCAN_LINES) {
-            rl.close();
             break;
           }
         } catch {
           continue;
         }
       }
+
+      // rl.close() alone leaves the stream's fd open until GC; discovery runs
+      // this over every session on every refresh, so without destroy() the
+      // extension host bleeds fds until EMFILE takes the whole list down.
+      rl.close();
+      fileStream.destroy();
 
       if (!foundFirst) {
         return null;

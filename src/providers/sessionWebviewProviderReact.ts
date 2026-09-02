@@ -292,22 +292,45 @@ export class SessionWebviewProviderReact {
       // ignore
     }
 
-    const triggerReload = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
+    // One reload at a time: a session with dozens of live agents re-parses
+    // every transcript per pass, and overlapping passes pile up open files.
+    let reloadInFlight = false;
+    let reloadQueued = false;
+    const runReload = async () => {
+      if (reloadInFlight) {
+        reloadQueued = true;
+        return;
       }
-      debounceTimer = setTimeout(async () => {
-        try {
-          const updatedData = await this.loadSessionData(sessionId);
-          if (updatedData) {
-            panel.webview.postMessage({
-              type: 'sessionData',
-              data: updatedData,
-            });
-          }
-        } catch (err) {
-          console.error('Error reloading session for live update:', err);
+      reloadInFlight = true;
+      try {
+        const updatedData = await this.loadSessionData(sessionId);
+        if (updatedData) {
+          panel.webview.postMessage({
+            type: 'sessionData',
+            data: updatedData,
+          });
         }
+      } catch (err) {
+        console.error('Error reloading session for live update:', err);
+      } finally {
+        reloadInFlight = false;
+        if (reloadQueued) {
+          reloadQueued = false;
+          triggerReload();
+        }
+      }
+    };
+
+    const triggerReload = () => {
+      // Fixed window rather than a sliding one: a transcript being written
+      // continuously would keep pushing a sliding deadline out forever, and
+      // the panel would never repaint while a busy workflow runs.
+      if (debounceTimer) {
+        return;
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined;
+        void runReload();
       }, 500);
     };
 
