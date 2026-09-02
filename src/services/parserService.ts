@@ -1137,6 +1137,25 @@ export class ParserService {
           const runDir = path.join(wfRoot, runId);
           if (!fs.statSync(runDir).isDirectory()) continue;
           const state = this.readWorkflowState(projectDir, sessionId, runId);
+          // The state file is only written when the run ends. While it runs,
+          // the live signal is the run's journal: a `started` line per agent
+          // launch and a `result` line when that agent completes.
+          const startedIds = new Set<string>();
+          const resultIds = new Set<string>();
+          const journalPath = path.join(runDir, 'journal.jsonl');
+          if (!state && fs.existsSync(journalPath)) {
+            try {
+              for (const line of fs.readFileSync(journalPath, 'utf-8').split('\n')) {
+                if (!line.trim()) continue;
+                const e = JSON.parse(line);
+                if (typeof e?.agentId !== 'string') continue;
+                if (e.type === 'started') startedIds.add(e.agentId);
+                else if (e.type === 'result') resultIds.add(e.agentId);
+              }
+            } catch {
+              // a torn write mid-run: fall back to "unknown"
+            }
+          }
           for (const file of fs.readdirSync(runDir)) {
             // The run dir also holds journal.jsonl — not an agent transcript.
             if (!file.startsWith('agent-') || !file.endsWith('.jsonl')) continue;
@@ -1158,6 +1177,10 @@ export class ParserService {
               info.finished = doneStates.has(row.state);
             } else if (state) {
               info.finished = state.status !== 'running';
+            } else if (resultIds.has(info.agentId)) {
+              info.finished = true;
+            } else if (startedIds.has(info.agentId)) {
+              info.finished = false;
             }
             subagents.push(info);
           }
