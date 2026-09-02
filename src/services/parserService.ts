@@ -969,7 +969,60 @@ export class ParserService {
    * canonical id stored internally does not.
    */
   getSubagentFilePath(projectDir: string, sessionId: string, agentId: string): string {
-    return path.join(this.getSubagentsDir(projectDir, sessionId), `agent-${agentId}.jsonl`);
+    const flat = path.join(this.getSubagentsDir(projectDir, sessionId), `agent-${agentId}.jsonl`);
+    if (fs.existsSync(flat)) return flat;
+    // Workflow agents sit one level down, per run.
+    const wfRoot = path.join(this.getSubagentsDir(projectDir, sessionId), 'workflows');
+    if (fs.existsSync(wfRoot)) {
+      try {
+        for (const run of fs.readdirSync(wfRoot)) {
+          const p = path.join(wfRoot, run, `agent-${agentId}.jsonl`);
+          if (fs.existsSync(p)) return p;
+        }
+      } catch {
+        // fall through to the flat path
+      }
+    }
+    return flat;
+  }
+
+  /**
+   * State file of one Workflow run: overall status plus one row per agent()
+   * call with its label, phase and state.
+   */
+  private readWorkflowState(
+    projectDir: string,
+    sessionId: string,
+    runId: string
+  ):
+    | {
+        workflowName: string;
+        status: string;
+        agents: Map<string, { label?: string; phaseTitle?: string; state: string }>;
+      }
+    | undefined {
+    const statePath = path.join(projectDir, sessionId, 'workflows', `${runId}.json`);
+    if (!fs.existsSync(statePath)) return undefined;
+    try {
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+      const agents = new Map<string, { label?: string; phaseTitle?: string; state: string }>();
+      const progress = Array.isArray(state.workflowProgress) ? state.workflowProgress : [];
+      for (const row of progress) {
+        if (row?.type !== 'workflow_agent' || typeof row.agentId !== 'string') continue;
+        agents.set(row.agentId, {
+          label: typeof row.label === 'string' ? row.label : undefined,
+          phaseTitle: typeof row.phaseTitle === 'string' ? row.phaseTitle : undefined,
+          state: typeof row.state === 'string' ? row.state : '',
+        });
+      }
+      return {
+        workflowName: typeof state.workflowName === 'string' ? state.workflowName : runId,
+        status: typeof state.status === 'string' ? state.status : '',
+        agents,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -985,6 +1038,81 @@ export class ParserService {
 
     const subagents: SubagentInfo[] = [];
 
+    // Parse one transcript in `dir`; meta.json sits next to it.
+    const parseOne = async (dir: string, file: string): Promise<SubagentInfo | null> => {
+      // Filenames carry an `agent-` prefix that the JSONL contents and the
+      // spawning tool's `toolUseResult.agentId` do not. Strip it so the
+      // canonical id matches across all three sources.
+      const agentId = file.replace(/^agent-/, '').replace(/\.jsonl$/, '');
+      const filePath = path.join(dir, file);
+      const events = await this.parseFile(filePath);
+
+      if (events.length === 0) {
+        return null;
+      }
+
+      // Extract prompt from first user event
+      let prompt = '';
+      for (const event of events) {
+        if (event.type === 'user') {
+          prompt = this.extractPromptFromEvent(event);
+          break;
+        }
+      }
+
+      const session = this.buildSession(events, agentId, prompt, '');
+
+      // Tag every step with its owning agentId so the flatten helper and
+      // downstream tabs can distinguish agent activity from main session.
+      for (const step of session.steps) {
+        step.agentId = agentId;
+      }
+
+      // meta.json is written next to the JSONL with agentType + description.
+      // The file keeps the `agent-` prefix even though the canonical id we
+      // store internally does not.
+      let agentType: string | undefined;
+      let description: string | undefined;
+      let parentAgentId: string | undefined;
+      let toolUseId: string | undefined;
+      let spawnDepth: number | undefined;
+      const metaPath = path.join(dir, `agent-${agentId}.meta.json`);
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          agentType = typeof meta.agentType === 'string' ? meta.agentType : undefined;
+          description = typeof meta.description === 'string' ? meta.description : undefined;
+          // Present only for agents spawned from inside another agent.
+          parentAgentId = typeof meta.parentAgentId === 'string' ? meta.parentAgentId : undefined;
+          toolUseId = typeof meta.toolUseId === 'string' ? meta.toolUseId : undefined;
+          spawnDepth = typeof meta.spawnDepth === 'number' ? meta.spawnDepth : undefined;
+        } catch {
+          // ignore malformed meta
+        }
+      }
+
+      return {
+        agentId,
+        prompt,
+        model: session.model,
+        agentType,
+        description,
+        parentAgentId,
+        toolUseId,
+        spawnDepth,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        durationMs: session.durationMs,
+        filesRead: session.filesRead,
+        filesWritten: session.filesWritten,
+        toolsUsed: session.toolsUsed,
+        stepCount: session.steps.length,
+        totalCost: session.totalCost,
+        steps: session.steps,
+        agentFinishedAt: session.agentFinishedAt,
+      };
+    };
+
     try {
       const files = fs.readdirSync(subagentsDir);
 
@@ -992,78 +1120,48 @@ export class ParserService {
         if (!file.endsWith('.jsonl')) {
           continue;
         }
+        const info = await parseOne(subagentsDir, file);
+        if (info) subagents.push(info);
+      }
 
-        // Filenames carry an `agent-` prefix that the JSONL contents and the
-        // spawning tool's `toolUseResult.agentId` do not. Strip it so the
-        // canonical id matches across all three sources.
-        const agentId = file.replace(/^agent-/, '').replace(/\.jsonl$/, '');
-        const filePath = path.join(subagentsDir, file);
-        const events = await this.parseFile(filePath);
-
-        if (events.length === 0) {
-          continue;
-        }
-
-        // Extract prompt from first user event
-        let prompt = '';
-        for (const event of events) {
-          if (event.type === 'user') {
-            prompt = this.extractPromptFromEvent(event);
-            break;
+      // Workflow-spawned agents live one level down, one directory per run:
+      // `subagents/workflows/<runId>/agent-*.jsonl`. Their meta.json has no
+      // toolUseId or description — the run's state file
+      // (`<sessionId>/workflows/<runId>.json`) carries label, phase and
+      // per-agent state instead, and is the completion authority (workflow
+      // task-notifications name the task id, never the agent ids).
+      const wfRoot = path.join(subagentsDir, 'workflows');
+      if (fs.existsSync(wfRoot)) {
+        const doneStates = new Set(['done', 'error', 'failed', 'cancelled', 'canceled']);
+        for (const runId of fs.readdirSync(wfRoot)) {
+          const runDir = path.join(wfRoot, runId);
+          if (!fs.statSync(runDir).isDirectory()) continue;
+          const state = this.readWorkflowState(projectDir, sessionId, runId);
+          for (const file of fs.readdirSync(runDir)) {
+            // The run dir also holds journal.jsonl — not an agent transcript.
+            if (!file.startsWith('agent-') || !file.endsWith('.jsonl')) continue;
+            const info = await parseOne(runDir, file);
+            if (!info) continue;
+            info.workflowRunId = runId;
+            const row = state?.agents.get(info.agentId);
+            if (row?.label) {
+              // The script's label (`scan:predraw-base`) beats the generic
+              // "workflow-subagent" the meta carries.
+              info.agentType = row.label;
+            }
+            if (!info.description && state) {
+              info.description = row?.phaseTitle
+                ? `${state.workflowName} · ${row.phaseTitle}`
+                : state.workflowName;
+            }
+            if (row) {
+              info.finished = doneStates.has(row.state);
+            } else if (state) {
+              info.finished = state.status !== 'running';
+            }
+            subagents.push(info);
           }
         }
-
-        const session = this.buildSession(events, agentId, prompt, '');
-
-        // Tag every step with its owning agentId so the flatten helper and
-        // downstream tabs can distinguish agent activity from main session.
-        for (const step of session.steps) {
-          step.agentId = agentId;
-        }
-
-        // meta.json is written next to the JSONL with agentType + description.
-        // The file keeps the `agent-` prefix even though the canonical id we
-        // store internally does not.
-        let agentType: string | undefined;
-        let description: string | undefined;
-        let parentAgentId: string | undefined;
-        let toolUseId: string | undefined;
-        let spawnDepth: number | undefined;
-        const metaPath = path.join(subagentsDir, `agent-${agentId}.meta.json`);
-        if (fs.existsSync(metaPath)) {
-          try {
-            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-            agentType = typeof meta.agentType === 'string' ? meta.agentType : undefined;
-            description = typeof meta.description === 'string' ? meta.description : undefined;
-            // Present only for agents spawned from inside another agent.
-            parentAgentId = typeof meta.parentAgentId === 'string' ? meta.parentAgentId : undefined;
-            toolUseId = typeof meta.toolUseId === 'string' ? meta.toolUseId : undefined;
-            spawnDepth = typeof meta.spawnDepth === 'number' ? meta.spawnDepth : undefined;
-          } catch {
-            // ignore malformed meta
-          }
-        }
-
-        subagents.push({
-          agentId,
-          prompt,
-          model: session.model,
-          agentType,
-          description,
-          parentAgentId,
-          toolUseId,
-          spawnDepth,
-          startTime: session.startTime,
-          endTime: session.endTime,
-          durationMs: session.durationMs,
-          filesRead: session.filesRead,
-          filesWritten: session.filesWritten,
-          toolsUsed: session.toolsUsed,
-          stepCount: session.steps.length,
-          totalCost: session.totalCost,
-          steps: session.steps,
-          agentFinishedAt: session.agentFinishedAt,
-        });
       }
     } catch (err) {
       console.error('Error parsing subagents:', err);
@@ -1112,6 +1210,16 @@ export class ParserService {
       if (spawner) sub.parentStepIndex = spawner.index;
     }
 
+    // Workflow agents have no toolUseId; the launching Workflow step's
+    // result carries the runId (a resume repeats it — the first launch wins).
+    for (const sub of subagents) {
+      if (!sub.workflowRunId || typeof sub.parentStepIndex === 'number') continue;
+      const spawner = steps.find(
+        st => st.toolName === 'Workflow' && st.toolResult?.includes(sub.workflowRunId!)
+      );
+      if (spawner) sub.parentStepIndex = spawner.index;
+    }
+
     for (const step of steps) {
       if (step.toolName !== 'Task' && step.toolName !== 'Agent') continue;
       if (!step.toolResult) continue;
@@ -1127,6 +1235,9 @@ export class ParserService {
     }
 
     for (const sub of subagents) {
+      // Workflow agents: `finished` was already decided from the run's state
+      // file; task-notifications name the task id, never the agent ids.
+      if (sub.workflowRunId) continue;
       if (typeof sub.parentStepIndex !== 'number') continue;
       const parentSteps = sub.parentAgentId ? byId.get(sub.parentAgentId)?.steps : steps;
       const spawner = parentSteps?.[sub.parentStepIndex];

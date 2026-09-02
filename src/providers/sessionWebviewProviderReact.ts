@@ -322,7 +322,9 @@ export class SessionWebviewProviderReact {
       );
       if (!fs.existsSync(subDir)) return;
       try {
-        const subWatcher = fs.watch(subDir, () => {
+        // Recursive: workflow agents write under subagents/workflows/<runId>/,
+        // which a flat watch on subagents/ never sees ticking.
+        const subWatcher = fs.watch(subDir, { recursive: true }, () => {
           // Any add/change inside the subagents dir → reuse the same debounce
           // so we don't double-reload when both main and agent files tick.
           triggerReload();

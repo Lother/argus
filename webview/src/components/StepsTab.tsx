@@ -899,7 +899,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
           // A Task row may itself sit inside an agent transcript, so look the
           // spawned agents up by (owning agent, local step index).
           const linkedAgents =
-            step.toolName === 'Task' || step.toolName === 'Agent'
+            step.toolName === 'Task' || step.toolName === 'Agent' || step.toolName === 'Workflow'
               ? agentsByParent.get(spawnKey(step.agentId, step.index))
               : undefined;
           const allCollapsed = linkedAgents

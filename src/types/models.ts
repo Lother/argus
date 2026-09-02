@@ -203,6 +203,13 @@ export interface SubagentInfo {
   finished?: boolean;
   /** See `SessionDetail.agentFinishedAt` — notifications seen in this agent's own transcript. */
   agentFinishedAt?: Record<string, string>;
+  /**
+   * Set for agents spawned by a Workflow run rather than a Task tool call.
+   * Their transcripts live in `subagents/workflows/<runId>/`, their spawning
+   * step is the Workflow tool call whose result names this runId, and their
+   * completion comes from the run's state file, not a task-notification.
+   */
+  workflowRunId?: string;
 }
 
 /**
