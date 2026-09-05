@@ -251,18 +251,18 @@ const StepTokenUsage = ({ usage }: { usage: TokenUsage }) => {
   const thinking = usage.output_tokens_details?.thinking_tokens ?? 0;
 
   const items: [string, number, string, boolean][] = [
-    ['in', usage.input_tokens, 'Input tokens', false],
-    ['out', usage.output_tokens, 'Output tokens', false],
+    [t('steps.usageIn'), usage.input_tokens, t('steps.usageInTitle'), false],
+    [t('steps.usageOut'), usage.output_tokens, t('steps.usageOutTitle'), false],
     ...(thinking > 0
-      ? ([['think', thinking, 'Reasoning tokens — part of the output count, not billed on top of it', true]] as [
+      ? ([[t('steps.usageThink'), thinking, t('steps.usageThinkTitle'), true]] as [
         string,
         number,
         string,
         boolean,
       ][])
       : []),
-    ['cache r', usage.cache_read_input_tokens, 'Cache read tokens', false],
-    ['cache w', usage.cache_creation_input_tokens, 'Cache creation tokens', false],
+    [t('steps.usageCacheRead'), usage.cache_read_input_tokens, t('steps.usageCacheReadTitle'), false],
+    [t('steps.usageCacheWrite'), usage.cache_creation_input_tokens, t('steps.usageCacheWriteTitle'), false],
   ];
   return (
     <span className="step-usage">
@@ -273,7 +273,7 @@ const StepTokenUsage = ({ usage }: { usage: TokenUsage }) => {
           title={title}
         >
           <span className="step-usage-label">{label}</span>
-          <span className="step-usage-value">{(value ?? 0).toLocaleString()}</span>
+          <span className="step-usage-value">{(value ?? 0).toLocaleString(locale)}</span>
         </span>
       ))}
     </span>
@@ -351,24 +351,35 @@ const Dropdown = ({ id, icon, label, items, selected, onSelect, isActive, multiS
 // says what happened, and the reason to filter on one of these is to find the
 // calls a rule stopped, or the ones a hook waved through.
 const STATUS_LABELS: Record<string, string> = {
-  all: 'Status',
-  success: 'Success',
-  failed: 'Failed',
-  issues: 'Has Issues',
-  allowed: 'Allowed by hook',
-  denied: 'Denied (any)',
-  'denied-user': 'Denied by user',
-  'denied-rule': 'Denied by rule',
-  'denied-automode': 'Blocked by auto mode',
-  'denied-hook': 'Denied by hook',
+  all: t('steps.filterStatus'),
+  success: t('steps.statusSuccess'),
+  failed: t('steps.statusFailed'),
+  issues: t('steps.statusIssues'),
+  allowed: t('steps.statusAllowedByHook'),
+  denied: t('steps.statusDeniedAny'),
+  'denied-user': t('steps.statusDeniedByUser'),
+  'denied-rule': t('steps.statusDeniedByRule'),
+  'denied-automode': t('steps.statusBlockedAutoMode'),
+  'denied-hook': t('steps.statusDeniedByHook'),
+};
+
+// Non-tool step kinds shown in the tool/type dropdown (harness `system` events
+// are handled separately, via SYSTEM_FILTER_PREFIX + filterKeyLabel).
+const TYPE_LABEL_KEYS: Record<string, string> = {
+  thinking: 'steps.typeThinking',
+  text: 'steps.typeText',
+  compact: 'steps.typeCompact',
+  user: 'steps.typeUser',
+  attachment: 'steps.typeAttachment',
+  system: 'steps.typeSystem',
 };
 
 /* ── Sort labels ── */
 const SORT_LABELS: Record<string, string> = {
-  newest: 'Newest',
-  oldest: 'Oldest',
-  'cost-desc': 'Cost ↓',
-  'cost-asc': 'Cost ↑',
+  newest: t('steps.sortNewest'),
+  oldest: t('steps.sortOldest'),
+  'cost-desc': t('steps.sortCostDesc'),
+  'cost-asc': t('steps.sortCostAsc'),
 };
 
 /* ── auto-expand patterns ── */
@@ -515,7 +526,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
       const key = modelFamilyKey(sub.model || '');
       if (key === 'unknown' || key === mainModelKey) return null;
       return (
-        <span className="step-agent-model" title={`Agent ran on ${sub.model}`}>
+        <span className="step-agent-model" title={t('steps.agentRanOnTitle', { model: sub.model })}>
           {formatModelLabel(sub.model)}
         </span>
       );
@@ -728,15 +739,8 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
       // appears among the types exactly while its header button is lit.
       if (key.startsWith(SYSTEM_FILTER_PREFIX)) {
         types.push({ value: key, label: filterKeyLabel(key), count });
-      } else if (
-        key === 'thinking' ||
-        key === 'text' ||
-        key === 'compact' ||
-        key === 'user' ||
-        key === 'attachment' ||
-        key === 'system'
-      ) {
-        types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
+      } else if (TYPE_LABEL_KEYS[key]) {
+        types.push({ value: key, label: t(TYPE_LABEL_KEYS[key]), count });
       } else {
         tools.push({ value: key, label: key, count });
       }
@@ -746,7 +750,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     tools.sort((a, b) => a.label.localeCompare(b.label));
 
     const items: (DropdownItem | 'separator')[] = [
-      { value: 'all', label: 'All Steps', count: steps.length },
+      { value: 'all', label: t('steps.filterAllSteps'), count: steps.length },
     ];
     if (types.length > 0) {
       items.push('separator', ...types);
@@ -763,11 +767,11 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
   // statuses that always mean something.
   const statusItems: (DropdownItem | 'separator')[] = useMemo(() => {
     const items: (DropdownItem | 'separator')[] = [
-      { value: 'all', label: 'All', count: steps.length },
+      { value: 'all', label: t('steps.statusAll'), count: steps.length },
       'separator',
-      { value: 'success', label: 'Success', count: statusCounts.success },
-      { value: 'failed', label: 'Failed', count: statusCounts.failed },
-      { value: 'issues', label: 'Has Issues', count: statusCounts.issues },
+      { value: 'success', label: t('steps.statusSuccess'), count: statusCounts.success },
+      { value: 'failed', label: t('steps.statusFailed'), count: statusCounts.failed },
+      { value: 'issues', label: t('steps.statusIssues'), count: statusCounts.issues },
     ];
     const permission: DropdownItem[] = ([
       ['allowed', STATUS_LABELS.allowed],
@@ -787,11 +791,11 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
 
   // Build sort dropdown items
   const sortItems: (DropdownItem | 'separator')[] = [
-    { value: 'newest', label: 'Newest First' },
-    { value: 'oldest', label: 'Oldest First' },
+    { value: 'newest', label: t('steps.sortNewestFirst') },
+    { value: 'oldest', label: t('steps.sortOldestFirst') },
     'separator',
-    { value: 'cost-desc', label: 'Cost: High → Low' },
-    { value: 'cost-asc', label: 'Cost: Low → High' },
+    { value: 'cost-desc', label: t('steps.sortCostHighLow') },
+    { value: 'cost-asc', label: t('steps.sortCostLowHigh') },
   ];
 
   // Filtered and sorted steps
@@ -892,7 +896,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
   // patterns, raw commands) so prose descriptions can render in the UI font.
   const getStepSummary = (step: Step): { text: string; mono: boolean } | null => {
     if (step.type === 'compact') {
-      return { text: 'context compacted — history replaced by a summary', mono: false };
+      return { text: t('steps.summaryCompact'), mono: false };
     }
     // A harness event: which hook (or whatever else names the source) fired,
     // then the first line of what it said.
@@ -918,7 +922,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
       // an empty turn.
       const count = step.attachments?.length ?? 0;
       if (count > 0) {
-        return { text: count === 1 ? '1 attachment' : `${count} attachments`, mono: false };
+        return {
+          text: count === 1
+            ? t('steps.attachmentCountOne')
+            : t('steps.attachmentCountOther', { count }),
+          mono: false,
+        };
       }
       return null;
     }
@@ -937,7 +946,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
           return input.file_path ? { text: input.file_path, mono: true } : null;
         case 'Grep':
         case 'Glob':
-          return { text: `"${input.pattern}"${input.path ? ` in ${input.path}` : ''}`, mono: true };
+          return {
+            text: input.path
+              ? t('steps.summaryPatternIn', { pattern: input.pattern, path: input.path })
+              : t('steps.summaryPattern', { pattern: input.pattern }),
+            mono: true,
+          };
         case 'Bash':
           // Claude writes a one-line description for every command it runs; it
           // reads better here than the command, which the expanded body shows
@@ -990,10 +1004,10 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
   // the key filtering runs on, not what a person calls it.
   const toolLabel =
     toolFilter.size === 0
-      ? 'Tool'
+      ? t('steps.filterTool')
       : toolFilter.size === 1
         ? filterKeyLabel([...toolFilter][0])
-        : `${toolFilter.size} tools`;
+        : t('steps.filterToolCount', { count: toolFilter.size });
   const statusLabel =
     STATUS_LABELS[statusFilter] ?? statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
   const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== defaultSortMode;
@@ -1015,7 +1029,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
             <input
               className="steps-search-input"
               type="text"
-              placeholder="Search steps..."
+              placeholder={t('steps.searchPlaceholder')}
               spellCheck={false}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -1067,11 +1081,11 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
             {hasActiveFilters && (
               <>
                 <div className="steps-divider" />
-                <button className="steps-clear-filters" onClick={clearAllFilters} title="Clear all filters">
+                <button className="steps-clear-filters" onClick={clearAllFilters} title={t('steps.clearFiltersTitle')}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" />
                   </svg>
-                  <span>Clear</span>
+                  <span>{t('steps.clear')}</span>
                 </button>
               </>
             )}
@@ -1201,7 +1215,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                     {ownerAgent && (
                       <>
                         <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
-                          {ownerAgent.agentType || 'agent'}
+                          {ownerAgent.agentType || t('steps.agentFallback')}
                         </span>
                         {modelBadge(ownerAgent)}
                         {/* Transcript of this agent lives in
@@ -1209,7 +1223,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                           so a row can be traced back to its own session file. */}
                         <span
                           className="step-agent-id"
-                          title={`Agent session: agent-${ownerAgent.agentId}.jsonl`}
+                          title={t('steps.agentSessionTitle', { id: ownerAgent.agentId })}
                         >
                           {ownerAgent.agentId}
                         </span>
@@ -1223,7 +1237,11 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                           <span key={a.agentId}>
                             <span
                               className="step-agent-id"
-                              title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                              title={
+                                a.agentType
+                                  ? t('steps.agentSessionTitleTyped', { id: a.agentId, type: a.agentType })
+                                  : t('steps.agentSessionTitle', { id: a.agentId })
+                              }
                             >
                               {a.agentId}
                             </span>
@@ -1238,9 +1256,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                             e.stopPropagation();
                             for (const a of linkedAgents) toggleAgent(a.agentId);
                           }}
-                          title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
+                          title={allCollapsed ? t('steps.showAgentSteps') : t('steps.hideAgentSteps')}
                         >
-                          {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
+                          {allCollapsed ? '▸' : '▾'}{' '}
+                          {t('steps.agentStepCount', {
+                            count: linkedAgents.reduce((acc, a) => acc + a.stepCount, 0),
+                          })}
                         </button>
                       </>
                     )}
@@ -1268,9 +1289,9 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                         <button
                           className="step-cost-ref step-cost-charged"
                           title={
-                            `Charged once for all ${sharedBlocks} blocks of response ${step.messageId} — click to show them` +
+                            t('steps.costChargedTitle', { blocks: sharedBlocks, messageId: step.messageId! }) +
                             (step.costIsEstimate
-                              ? `\nEstimated — no exact price for model ${step.model ?? 'unknown'}`
+                              ? `\n${t('steps.costEstimateTitle', { model: step.model ?? t('steps.modelUnknown') })}`
                               : '')
                           }
                           onClick={e => {
@@ -1298,7 +1319,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                     ) : chargedElsewhere ? (
                       <button
                         className="step-cost-ref"
-                        title={`This block is part of response ${step.messageId}, charged as a whole on step #${billed!.key} (${billed!.estimate ? '≈' : ''}$${billed!.cost.toFixed(4)} for ${billed!.blocks} blocks) — click to show only that response`}
+                        title={t('steps.costChargedElsewhereTitle', {
+                          messageId: step.messageId!,
+                          step: billed!.key,
+                          cost: `${billed!.estimate ? '≈' : ''}$${billed!.cost.toFixed(4)}`,
+                          blocks: billed!.blocks,
+                        })}
                         onClick={e => {
                           e.stopPropagation();
                           showResponse(step.messageId!);
@@ -1333,7 +1359,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                           fallback={(err) => (
                             <div className="renderer-fallback">
                               <div className="renderer-fallback-header">
-                                Renderer crashed — showing raw data. ({err.message})
+                                {t('steps.rendererCrashedData', { message: err.message })}
                               </div>
                               {step.toolInput !== undefined && (
                                 <pre className="detail-code">{JSON.stringify(step.toolInput, null, 2)}</pre>
@@ -1355,7 +1381,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                           fallback={(err) => (
                             <div className="renderer-fallback">
                               <div className="renderer-fallback-header">
-                                Renderer crashed — showing raw text. ({err.message})
+                                {t('steps.rendererCrashedText', { message: err.message })}
                               </div>
                               <pre className="detail-text">{step.content}</pre>
                             </div>

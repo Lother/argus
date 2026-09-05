@@ -29,6 +29,11 @@ export const webEn: Messages = {
   'app.showSearchBar': 'Show search bar',
   'app.hideSearchBar': 'Hide search bar',
   'app.deleteSession': 'Delete session',
+  'app.systemToggleEmptyTitle': 'No {plural} in this session',
+  'app.systemToggleShowTitle': 'Show {plural} ({count}) — {hint}',
+  'app.systemToggleHideTitle': 'Hide {plural} ({count}) — {hint}',
+  'app.systemToggleShowAria': 'Show {plural}',
+  'app.systemToggleHideAria': 'Hide {plural}',
 
   // AnalysisTab.tsx
   'analysis.severityError': 'error',
@@ -62,6 +67,7 @@ export const webEn: Messages = {
   'contentRenderer.raw': 'Raw',
   'contentRenderer.wrap': 'Wrap',
   'contentRenderer.wrapTitle': 'Raw view with long lines wrapped to the panel width',
+  'contentRenderer.ansiTitle': 'Terminal output — ANSI colours rendered',
 
   // ContextTab.tsx
   'context.totalInput': 'Total Input',
@@ -69,6 +75,7 @@ export const webEn: Messages = {
   'context.cacheRead': 'Cache Read',
   'context.cacheWrite': 'Cache Write',
   'context.avgPerStep': '{count} avg/step',
+  'context.avgPerResponse': '{count} avg/response',
   'context.cacheEfficiency': '{percent}% efficiency',
   'context.tokenDistribution': 'Token Distribution',
   'context.inputTokens': 'Input Tokens',
@@ -81,10 +88,14 @@ export const webEn: Messages = {
   // ContextTimeline.tsx
   'contextTimeline.notEnoughData': 'Not enough data to display timeline',
   'contextTimeline.title': 'Token Timeline',
+  'contextTimeline.subtitle': 'Running total for the session — every line only ever climbs',
   'contextTimeline.seriesInput': 'Input',
   'contextTimeline.seriesOutput': 'Output',
   'contextTimeline.seriesCache': 'Cache',
+  'contextTimeline.showSeries': 'Show {name}',
+  'contextTimeline.hideSeries': 'Hide {name}',
   'contextTimeline.legendCompactions': 'Compactions',
+  'contextTimeline.note': 'Click a series to hide it and rescale the axis. Click the chart to jump to that step.',
 
   // CostTab.tsx
   'cost.totalCost': 'Total Cost',
@@ -231,11 +242,27 @@ export const webEn: Messages = {
   // PerformanceTab.tsx
   'performance.chartLabel': 'Duration (ms)',
   'performance.chartTitle': 'Top 10 Slowest Operations',
+  'performance.activeDuration': 'Active Duration',
   'performance.totalDuration': 'Total Duration',
   'performance.slowestStep': 'Slowest Step',
   'performance.avgDuration': 'Avg Duration',
   'performance.durationByToolType': 'Duration by Tool Type',
   'performance.slowestStepsDetail': 'Slowest Steps Detail',
+
+  // RequestWeight.tsx
+  'requestWeight.title': 'Request Weight',
+  'requestWeight.subtitle': 'Context sent per API call — how much heavier each next request gets',
+  'requestWeight.seriesCacheRead': 'Cache read',
+  'requestWeight.seriesFreshInput': 'Fresh input',
+  'requestWeight.seriesCacheWrite': 'Cache write',
+  'requestWeight.seriesOutput': 'Output',
+  'requestWeight.rightAxisSuffix': ' (right axis)',
+  'requestWeight.tooltipStep': 'Step #{index}',
+  'requestWeight.tooltipTotal': '{count} tokens in prompt',
+  'requestWeight.showSeries': 'Show {name} — billed at {rate} the base input rate',
+  'requestWeight.hideSeries': 'Hide {name} — billed at {rate} the base input rate',
+  'requestWeight.note':
+    "Click a series to hide it and rescale the axis. ×N is the billed rate relative to the model's base input rate.",
 
   // SessionNotes.tsx
   'notes.toggle': 'Notes ({count})',
@@ -259,11 +286,18 @@ export const webEn: Messages = {
   'steps.typeCompact': 'Compact',
   'steps.typeUser': 'User',
   'steps.typeAttachment': 'Attachment',
+  'steps.typeSystem': 'System',
   'steps.statusAll': 'All',
   'steps.statusSuccess': 'Success',
   'steps.statusFailed': 'Failed',
   'steps.statusIssues': 'Has Issues',
   'steps.statusIssuesShort': 'Issues',
+  'steps.statusAllowedByHook': 'Allowed by hook',
+  'steps.statusDeniedAny': 'Denied (any)',
+  'steps.statusDeniedByUser': 'Denied by user',
+  'steps.statusDeniedByRule': 'Denied by rule',
+  'steps.statusBlockedAutoMode': 'Blocked by auto mode',
+  'steps.statusDeniedByHook': 'Denied by hook',
   'steps.sortNewestFirst': 'Newest First',
   'steps.sortOldestFirst': 'Oldest First',
   'steps.sortCostHighLow': 'Cost: High → Low',
@@ -288,18 +322,73 @@ export const webEn: Messages = {
   'steps.agentStepCount': '{count} agent steps',
   'steps.agentSessionTitle': 'Agent session: agent-{id}.jsonl',
   'steps.agentSessionTitleTyped': 'Agent session: agent-{id}.jsonl ({type})',
+  'steps.agentRanOnTitle': 'Agent ran on {model}',
   'steps.costEstimateTitle': 'Estimated — no exact price for model {model}',
+  'steps.costChargedTitle': 'Charged once for all {blocks} blocks of response {messageId} — click to show them',
+  'steps.costChargedElsewhereTitle':
+    'This block is part of response {messageId}, charged as a whole on step #{step} ({cost} for {blocks} blocks) — click to show only that response',
   'steps.modelUnknown': 'unknown',
   'steps.rendererCrashedData': 'Renderer crashed — showing raw data. ({message})',
   'steps.rendererCrashedText': 'Renderer crashed — showing raw text. ({message})',
   'steps.usageIn': 'in',
   'steps.usageOut': 'out',
+  'steps.usageThink': 'think',
   'steps.usageCacheRead': 'cache r',
   'steps.usageCacheWrite': 'cache w',
   'steps.usageInTitle': 'Input tokens',
   'steps.usageOutTitle': 'Output tokens',
+  'steps.usageThinkTitle': 'Reasoning tokens — part of the output count, not billed on top of it',
   'steps.usageCacheReadTitle': 'Cache read tokens',
   'steps.usageCacheWriteTitle': 'Cache creation tokens',
+
+  // resultBlocks.tsx
+  'resultBlocks.noSource': 'no source',
+  'resultBlocks.fileId': 'file {id}',
+  'resultBlocks.binaryContents': 'binary contents',
+  'resultBlocks.noContents': 'no contents',
+  'resultBlocks.arguments': 'Arguments',
+  'resultBlocks.serverError': 'The server flagged this result as an error.',
+  'resultBlocks.structuredContent': 'Structured content',
+  'resultBlocks.noToolsLoaded': 'The search loaded no tools.',
+  'resultBlocks.toolsLoadedOne': '{count} tool loaded{deferred}',
+  'resultBlocks.toolsLoadedOther': '{count} tools loaded{deferred}',
+  'resultBlocks.deferredSuffix': ' of {total} deferred',
+  'resultBlocks.maxResults': 'max {max}',
+  'resultBlocks.tabCountOne': '{count} tab',
+  'resultBlocks.tabCountOther': '{count} tabs',
+  'resultBlocks.tabFallback': 'tab {number}',
+  'resultBlocks.kindImage': 'image',
+  'resultBlocks.kindAudio': 'audio',
+  'resultBlocks.kindResource': 'resource',
+  'resultBlocks.kindLink': 'link',
+  'resultBlocks.kindResult': 'result',
+  'resultBlocks.kindDocument': 'document',
+  'resultBlocks.kindBrowser': 'browser',
+
+  // systemSteps.tsx
+  'systemSteps.hookBlockingErrorLabel': 'hook error',
+  'systemSteps.hookBlockingErrorPlural': 'hook errors',
+  'systemSteps.hookBlockingErrorHint':
+    'a hook refused a tool call, and the model was handed the error instead of a result',
+  'systemSteps.hookBlockingErrorButtonPlural': 'hook steps',
+  'systemSteps.hookBlockingErrorButtonHint':
+    "everything the hooks did — one that blocked a tool call, one that failed and was let through, and what the Stop hooks did at the end of each turn; red is a hook that went wrong, grey is a hook that simply ran",
+  'systemSteps.hookNonBlockingErrorLabel': 'hook failed',
+  'systemSteps.hookNonBlockingErrorPlural': 'hook failures',
+  'systemSteps.hookNonBlockingErrorHint':
+    'a hook exited non-zero and nothing stopped — the notification never fired, the formatter never ran, and this event is the only trace',
+  'systemSteps.apiErrorLabel': 'api error',
+  'systemSteps.apiErrorPlural': 'API errors',
+  'systemSteps.apiErrorHint':
+    'a request failed and was retried — one row per attempt, so a burst reads as the burst it was',
+  'systemSteps.localCommandLabel': 'command',
+  'systemSteps.localCommandPlural': 'local commands',
+  'systemSteps.localCommandHint':
+    "a slash command the CLI answered by itself — the model never saw it; the invocation and its output are separate rows",
+  'systemSteps.stopHookSummaryLabel': 'stop hooks',
+  'systemSteps.stopHookSummaryPlural': 'stop hooks',
+  'systemSteps.stopHookSummaryHint':
+    'what the Stop hooks did when a turn ended — one row per turn, so most say only that they ran; the ones that matter are the errors and the refusals to stop',
 
   // ToolRenderer.tsx
   'toolRenderer.pretty': 'Pretty',
@@ -336,6 +425,16 @@ export const webEn: Messages = {
   'toolRenderer.toolInput': 'Tool Input',
   'toolRenderer.toolResult': 'Tool Result',
   'toolRenderer.attachmentRaw': '{name} · {mediaType} (base64)',
+  'toolRenderer.permAllowed': 'Allowed',
+  'toolRenderer.permDenied': 'Denied',
+  'toolRenderer.modelRequestedLabel': 'model: {model}',
+  'toolRenderer.modelRequestedTitle': 'Model requested for this agent',
+  'toolRenderer.askNoQuestions': 'No questions recorded for this ask.',
+  'toolRenderer.askMulti': 'multi',
+  'toolRenderer.askUnanswered': 'unanswered',
+  'toolRenderer.askPreview': 'preview',
+  'toolRenderer.askOwnAnswer': 'Own answer',
+  'toolRenderer.askNote': 'note',
 
   // Shared formatters (durations)
   'fmt.durationMs': '{value}ms',

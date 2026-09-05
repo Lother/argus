@@ -18,6 +18,7 @@
  */
 
 import type { ReactElement } from 'react';
+import { t } from '../i18n';
 
 interface IconProps {
   className?: string;
@@ -144,9 +145,9 @@ export interface SystemStepKindInfo {
 export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
   {
     kind: 'hook_blocking_error',
-    label: 'hook error',
-    plural: 'hook errors',
-    hint: 'a hook refused a tool call, and the model was handed the error instead of a result',
+    label: t('systemSteps.hookBlockingErrorLabel'),
+    plural: t('systemSteps.hookBlockingErrorPlural'),
+    hint: t('systemSteps.hookBlockingErrorHint'),
     Icon: BlockedIcon,
     // The one button for every hook the harness ran. "What did my hooks do?" is
     // a single question, and splitting it across buttons meant answering it
@@ -154,38 +155,38 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     // they arrive grey against the failures' red, so the rare row still reads
     // as the rare row.
     button: {
-      plural: 'hook steps',
-      hint: 'everything the hooks did — one that blocked a tool call, one that failed and was let through, and what the Stop hooks did at the end of each turn; red is a hook that went wrong, grey is a hook that simply ran',
+      plural: t('systemSteps.hookBlockingErrorButtonPlural'),
+      hint: t('systemSteps.hookBlockingErrorButtonHint'),
       Icon: HookIcon,
     },
   },
   {
     kind: 'hook_non_blocking_error',
-    label: 'hook failed',
-    plural: 'hook failures',
-    hint: 'a hook exited non-zero and nothing stopped — the notification never fired, the formatter never ran, and this event is the only trace',
+    label: t('systemSteps.hookNonBlockingErrorLabel'),
+    plural: t('systemSteps.hookNonBlockingErrorPlural'),
+    hint: t('systemSteps.hookNonBlockingErrorHint'),
     Icon: HookFailedIcon,
     toggleWith: 'hook_blocking_error',
   },
   {
     kind: 'api_error',
-    label: 'api error',
-    plural: 'API errors',
-    hint: 'a request failed and was retried — one row per attempt, so a burst reads as the burst it was',
+    label: t('systemSteps.apiErrorLabel'),
+    plural: t('systemSteps.apiErrorPlural'),
+    hint: t('systemSteps.apiErrorHint'),
     Icon: ApiErrorIcon,
   },
   {
     kind: 'local_command',
-    label: 'command',
-    plural: 'local commands',
-    hint: 'a slash command the CLI answered by itself — the model never saw it; the invocation and its output are separate rows',
+    label: t('systemSteps.localCommandLabel'),
+    plural: t('systemSteps.localCommandPlural'),
+    hint: t('systemSteps.localCommandHint'),
     Icon: LocalCommandIcon,
   },
   {
     kind: 'stop_hook_summary',
-    label: 'stop hooks',
-    plural: 'stop hooks',
-    hint: 'what the Stop hooks did when a turn ended — one row per turn, so most say only that they ran; the ones that matter are the errors and the refusals to stop',
+    label: t('systemSteps.stopHookSummaryLabel'),
+    plural: t('systemSteps.stopHookSummaryPlural'),
+    hint: t('systemSteps.stopHookSummaryHint'),
     Icon: HookIcon,
     toggleWith: 'hook_blocking_error',
   },

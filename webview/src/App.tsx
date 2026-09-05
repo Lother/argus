@@ -341,7 +341,6 @@ function App() {
               const button = info.button ?? info;
               const count = systemStepCounts.get(info.kind) ?? 0;
               const shown = visibleSystemToggles.has(info.kind);
-              const action = shown ? 'Hide' : 'Show';
               return (
                 <button
                   key={info.kind}
@@ -350,10 +349,16 @@ function App() {
                   disabled={count === 0}
                   title={
                     count === 0
-                      ? `No ${button.plural} in this session`
-                      : `${action} ${button.plural} (${count}) — ${button.hint}`
+                      ? t('app.systemToggleEmptyTitle', { plural: button.plural })
+                      : t(shown ? 'app.systemToggleHideTitle' : 'app.systemToggleShowTitle', {
+                          plural: button.plural,
+                          count,
+                          hint: button.hint,
+                        })
                   }
-                  aria-label={`${action} ${button.plural}`}
+                  aria-label={t(shown ? 'app.systemToggleHideAria' : 'app.systemToggleShowAria', {
+                    plural: button.plural,
+                  })}
                   aria-pressed={shown}
                 >
                   <button.Icon size={12} />

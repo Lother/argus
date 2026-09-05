@@ -176,7 +176,7 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
           <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />{t('contextTimeline.legendCompactions')}</span>
         )}
       </div>
-      <div className="token-legend-note">Click a series to hide it and rescale the axis. Click the chart to jump to that step.</div>
+      <div className="token-legend-note">{t('contextTimeline.note')}</div>
     </div>
   );
 }

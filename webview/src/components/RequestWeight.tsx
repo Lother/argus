@@ -3,6 +3,7 @@ import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Respon
 import { Step, stepKey } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
 import { useChartStepClick } from '../utils/chartStepClick';
+import { t, locale } from '../i18n';
 
 interface Props {
   steps: Step[];
@@ -37,12 +38,12 @@ interface Series {
 // cache writes at 1.25x (5m TTL) or 2x (1h), and every model in the price table
 // charges output at 5x its input rate.
 const PROMPT_SERIES: Series[] = [
-  { key: 'cacheRead', label: 'Cache read', color: '#5eead4', rate: '0.1×' },
-  { key: 'freshInput', label: 'Fresh input', color: '#06b6d4', rate: '1×' },
-  { key: 'cacheWrite', label: 'Cache write', color: '#fbbf24', rate: '1.25–2×' }
+  { key: 'cacheRead', label: t('requestWeight.seriesCacheRead'), color: '#5eead4', rate: '0.1×' },
+  { key: 'freshInput', label: t('requestWeight.seriesFreshInput'), color: '#06b6d4', rate: '1×' },
+  { key: 'cacheWrite', label: t('requestWeight.seriesCacheWrite'), color: '#fbbf24', rate: '1.25–2×' }
 ];
 
-const OUTPUT_SERIES: Series = { key: 'output', label: 'Output', color: '#8b5cf6', rate: '5×' };
+const OUTPUT_SERIES: Series = { key: 'output', label: t('requestWeight.seriesOutput'), color: '#8b5cf6', rate: '5×' };
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -61,13 +62,15 @@ function RequestTooltip({ active, payload, hidden }: any) {
 
   return (
     <div className="request-weight-tooltip">
-      <div className="request-weight-tooltip-title">Step #{p.index}</div>
-      <div className="request-weight-tooltip-total">{promptTotal.toLocaleString()} tokens in prompt</div>
+      <div className="request-weight-tooltip-title">{t('requestWeight.tooltipStep', { index: p.index })}</div>
+      <div className="request-weight-tooltip-total">
+        {t('requestWeight.tooltipTotal', { count: promptTotal.toLocaleString(locale) })}
+      </div>
       {visible.map(s => (
         <div className="request-weight-tooltip-row" key={s.key}>
           <span className="token-dot" style={{ background: s.color }} />
           <span>{s.label}</span>
-          <strong>{p[s.key].toLocaleString()}</strong>
+          <strong>{p[s.key].toLocaleString(locale)}</strong>
         </div>
       ))}
     </div>
@@ -142,7 +145,10 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
       className={`token-legend-item token-legend-toggle${hidden.has(s.key) ? ' is-hidden' : ''}`}
       onClick={() => toggle(s.key)}
       aria-pressed={!hidden.has(s.key)}
-      title={`${hidden.has(s.key) ? 'Show' : 'Hide'} ${s.label} — billed at ${s.rate} the base input rate`}
+      title={t(hidden.has(s.key) ? 'requestWeight.showSeries' : 'requestWeight.hideSeries', {
+        name: s.label,
+        rate: s.rate,
+      })}
     >
       <span className="token-dot" style={{ background: s.color }} />
       {s.label}{suffix}
@@ -152,8 +158,8 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
 
   return (
     <div className="context-timeline-container">
-      <h3 className="section-title">Request Weight</h3>
-      <div className="section-subtitle">Context sent per API call — how much heavier each next request gets</div>
+      <h3 className="section-title">{t('requestWeight.title')}</h3>
+      <div className="section-subtitle">{t('requestWeight.subtitle')}</div>
       <div className="context-timeline-chart is-clickable" {...wrapperHandlers}>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }} {...chartHandlers}>
@@ -233,13 +239,13 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
 
       <div className="token-legend">
         {PROMPT_SERIES.map(s => legendItem(s))}
-        {legendItem(OUTPUT_SERIES, ' (right axis)')}
+        {legendItem(OUTPUT_SERIES, t('requestWeight.rightAxisSuffix'))}
         {(compactionPoints?.length ?? 0) > 0 && (
-          <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />Compactions</span>
+          <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />{t('contextTimeline.legendCompactions')}</span>
         )}
       </div>
       <div className="token-legend-note">
-        Click a series to hide it and rescale the axis. ×N is the billed rate relative to the model's base input rate.
+        {t('requestWeight.note')}
       </div>
     </div>
   );

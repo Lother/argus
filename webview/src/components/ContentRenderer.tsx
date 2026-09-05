@@ -87,7 +87,7 @@ const ContentRenderer = ({ step, meta }: Props) => {
           {label && <span className="cr-kind">{label}</span>}
           {/* Says why Pretty is a terminal here and not the usual Markdown. */}
           {terminal && (
-            <span className="cr-ansi-badge" title="Terminal output — ANSI colours rendered">
+            <span className="cr-ansi-badge" title={t('contentRenderer.ansiTitle')}>
               ANSI
             </span>
           )}

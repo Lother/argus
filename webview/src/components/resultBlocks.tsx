@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import hljs from 'highlight.js';
 import { ansiToHtml, hasAnsi } from '../utils/ansi';
+import { t } from '../i18n';
 import './resultBlocks.css';
 
 /**
@@ -132,12 +133,12 @@ const formatSize = (bytes: number): string => {
 
 /** What a `source` holds, said in one line: a size, a link, or a file id. */
 const describeSource = (source: any): { text: string; url?: string } => {
-  if (!source || typeof source !== 'object') return { text: 'no source' };
+  if (!source || typeof source !== 'object') return { text: t('resultBlocks.noSource') };
   if (source.type === 'url' && typeof source.url === 'string') {
     return { text: source.url, url: source.url };
   }
   if (source.type === 'file' && typeof source.file_id === 'string') {
-    return { text: `file ${source.file_id}` };
+    return { text: t('resultBlocks.fileId', { id: source.file_id }) };
   }
   if (typeof source.data === 'string') {
     // The bytes themselves never reach here: the parser leaves their size
@@ -147,7 +148,7 @@ const describeSource = (source: any): { text: string; url?: string } => {
     const bytes = marker ? Number(marker[1]) : Math.floor((source.data.length * 3) / 4);
     return { text: formatSize(bytes) };
   }
-  return { text: source.type ? String(source.type) : 'no source' };
+  return { text: source.type ? String(source.type) : t('resultBlocks.noSource') };
 };
 
 /** Header line shared by the blocks that are a payload with a label on it. */
@@ -192,7 +193,7 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
       const described = describeSource(source);
       return (
         <BlockHead
-          kind={block.type}
+          kind={block.type === 'image' ? t('resultBlocks.kindImage') : t('resultBlocks.kindAudio')}
           title={media}
           url={described.url}
           meta={
@@ -213,7 +214,7 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
       return (
         <div className="rb-nested">
           <BlockHead
-            kind="resource"
+            kind={t('resultBlocks.kindResource')}
             title={uri}
             url={/^https?:/.test(uri) ? uri : undefined}
             meta={resource.mimeType}
@@ -222,7 +223,7 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
             <TextBody text={text} />
           ) : (
             <div className="rb-note">
-              {typeof resource.blob === 'string' ? 'binary contents' : 'no contents'}
+              {typeof resource.blob === 'string' ? t('resultBlocks.binaryContents') : t('resultBlocks.noContents')}
             </div>
           )}
         </div>
@@ -235,7 +236,7 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
       return (
         <div className="rb-nested">
           <BlockHead
-            kind="link"
+            kind={t('resultBlocks.kindLink')}
             title={block.name || uri}
             url={/^https?:/.test(uri) ? uri : undefined}
             meta={block.mimeType}
@@ -252,7 +253,7 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
       return (
         <div className="rb-nested">
           <BlockHead
-            kind="result"
+            kind={t('resultBlocks.kindResult')}
             title={block.title || source}
             url={/^https?:/.test(source) ? source : undefined}
           />
@@ -277,7 +278,7 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
       return (
         <div className="rb-nested">
           <BlockHead
-            kind="document"
+            kind={t('resultBlocks.kindDocument')}
             title={block.title || described.text}
             url={described.url}
             meta={source.media_type}
@@ -291,14 +292,20 @@ const BlockView = ({ block }: { block: ResultBlock }) => {
     // Browser state: the tab inventory after a browser tool call.
     case 'browser_state': {
       const tabs: any[] = Array.isArray(block.tabs) ? block.tabs : [];
+      const tabCount =
+        tabs.length === 1
+          ? t('resultBlocks.tabCountOne', { count: tabs.length })
+          : t('resultBlocks.tabCountOther', { count: tabs.length });
       return (
         <div className="rb-nested">
-          <BlockHead kind="browser" meta={`${tabs.length} tab${tabs.length === 1 ? '' : 's'}`} />
+          <BlockHead kind={t('resultBlocks.kindBrowser')} meta={tabCount} />
           <ul className="rb-tabs">
             {tabs.map((tab, i) => (
               <li key={i} className={`rb-tab${tab?.active ? ' rb-tab-active' : ''}`}>
                 {tab?.active && <span className="rb-dot" aria-hidden>●</span>}
-                <span className="rb-tab-title">{tab?.title || tab?.url || `tab ${i + 1}`}</span>
+                <span className="rb-tab-title">
+                  {tab?.title || tab?.url || t('resultBlocks.tabFallback', { number: i + 1 })}
+                </span>
                 {tab?.url && tab?.title && <span className="rb-uri">{tab.url}</span>}
               </li>
             ))}
@@ -376,7 +383,7 @@ export const ResultBlocksRenderer = ({ input, result }: { input: any; result: an
         // Open for a short argument list, folded for one that would push the
         // output off the screen.
         <details className="rb-args" open={args.length <= 400}>
-          <summary>Arguments</summary>
+          <summary>{t('resultBlocks.arguments')}</summary>
           <pre className="rb-json">
             <code
               className="hljs language-json"
@@ -385,11 +392,11 @@ export const ResultBlocksRenderer = ({ input, result }: { input: any; result: an
           </pre>
         </details>
       )}
-      {isError && <div className="rb-note rb-note-error">The server flagged this result as an error.</div>}
+      {isError && <div className="rb-note rb-note-error">{t('resultBlocks.serverError')}</div>}
       {blocks ? <ResultBlocks blocks={blocks} /> : <Json value={result} />}
       {structured !== undefined && (
         <>
-          <div className="tr-section-label">Structured content</div>
+          <div className="tr-section-label">{t('resultBlocks.structuredContent')}</div>
           <Json value={structured} />
         </>
       )}
@@ -430,15 +437,18 @@ export const ToolSearchRenderer = ({ input, result }: { input: any; result: any 
         : '';
   const max = typeof input?.max_results === 'number' ? input.max_results : undefined;
 
+  const deferred = total !== undefined ? t('resultBlocks.deferredSuffix', { total }) : '';
+  const loadedLabel =
+    matches.length === 1
+      ? t('resultBlocks.toolsLoadedOne', { count: matches.length, deferred })
+      : t('resultBlocks.toolsLoadedOther', { count: matches.length, deferred });
+
   return (
     <div className="tr-block">
       <div className="tr-grep-header">
         <code className="tr-grep-pattern">{query}</code>
-        {max !== undefined && <span className="tr-meta">max {max}</span>}
-        <span className="tr-meta">
-          {matches.length} tool{matches.length === 1 ? '' : 's'} loaded
-          {total !== undefined ? ` of ${total} deferred` : ''}
-        </span>
+        {max !== undefined && <span className="tr-meta">{t('resultBlocks.maxResults', { max })}</span>}
+        <span className="tr-meta">{loadedLabel}</span>
       </div>
       {errorMessage ? (
         <div className="rb-note rb-note-error">{errorMessage}</div>
@@ -451,7 +461,7 @@ export const ToolSearchRenderer = ({ input, result }: { input: any; result: any 
           ))}
         </div>
       ) : (
-        <div className="tr-empty">The search loaded no tools.</div>
+        <div className="tr-empty">{t('resultBlocks.noToolsLoaded')}</div>
       )}
     </div>
   );

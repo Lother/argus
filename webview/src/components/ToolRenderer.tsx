@@ -467,8 +467,8 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
         <div className="tr-task-header">
           {subagentType && <span className="tr-task-type">{subagentType}</span>}
           {requestedModel && (
-            <span className="tr-badge tr-badge-info" title="Model requested for this agent">
-              model: {requestedModel}
+            <span className="tr-badge tr-badge-info" title={t('toolRenderer.modelRequestedTitle')}>
+              {t('toolRenderer.modelRequestedLabel', { model: requestedModel })}
             </span>
           )}
         </div>
@@ -577,7 +577,7 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
   const call = useMemo(() => parseAskUserQuestion(input, result), [input, result]);
 
   if (call.questions.length === 0) {
-    return <div className="tr-empty">No questions recorded for this ask.</div>;
+    return <div className="tr-empty">{t('toolRenderer.askNoQuestions')}</div>;
   }
 
   return (
@@ -593,8 +593,10 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
           <div className="tr-ask-question" key={i}>
             <div className="tr-ask-head">
               {q.header && <span className="tr-ask-header">{q.header}</span>}
-              {q.multiSelect && <span className="tr-badge tr-badge-info">multi</span>}
-              {!answer.answered && <span className="tr-badge tr-badge-warn">unanswered</span>}
+              {q.multiSelect && <span className="tr-badge tr-badge-info">{t('toolRenderer.askMulti')}</span>}
+              {!answer.answered && (
+                <span className="tr-badge tr-badge-warn">{t('toolRenderer.askUnanswered')}</span>
+              )}
               <span className="tr-ask-text">{q.question}</span>
             </div>
             <ul className="tr-ask-options">
@@ -611,7 +613,7 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
                           it opens; the rest stay one line until asked for. */}
                       {o.preview && (
                         <details className="tr-ask-preview" open={chosen}>
-                          <summary>preview</summary>
+                          <summary>{t('toolRenderer.askPreview')}</summary>
                           <pre>{o.preview}</pre>
                         </details>
                       )}
@@ -625,7 +627,7 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
                 <li className="tr-ask-option tr-ask-option-chosen tr-ask-option-custom">
                   <span className="tr-ask-mark" aria-hidden>✎</span>
                   <div className="tr-ask-option-body">
-                    <div className="tr-ask-label">Own answer</div>
+                    <div className="tr-ask-label">{t('toolRenderer.askOwnAnswer')}</div>
                     <pre className="tr-ask-custom">{answer.custom}</pre>
                   </div>
                 </li>
@@ -633,7 +635,7 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
             </ul>
             {answer.note && (
               <div className="tr-ask-note">
-                <span className="tr-ask-note-label">note</span>
+                <span className="tr-ask-note-label">{t('toolRenderer.askNote')}</span>
                 <pre className="tr-ask-custom">{answer.note}</pre>
               </div>
             )}
