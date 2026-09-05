@@ -2,34 +2,111 @@
   <img src="logo.png" alt="Argus logo" width="180" />
 </p>
 
-<p align="center"><strong>Argus — Claude Code Agent Monitoring &amp; Observability on VSCode.</strong></p>
+<p align="center"><strong>Argus — VS Code 裡的 Claude Code agent 監控與觀測（繁體中文版）</strong></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/VS%20Code-1.80%2B-0078d7?logo=visualstudiocode&logoColor=white" alt="VS Code 1.80+" />
   <img src="https://img.shields.io/badge/runtime-TypeScript-3178c6?logo=typescript&logoColor=white" alt="TypeScript runtime" />
   <img src="https://img.shields.io/badge/webview-React%2019-61dafb?logo=react&logoColor=black" alt="React 19 webview" />
-  <img src="https://img.shields.io/badge/bundler-Vite%207-646cff?logo=vite&logoColor=white" alt="Vite 7" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-f28c28" alt="macOS, Linux, Windows" />
   <img src="https://img.shields.io/badge/license-MIT-0f7ae5" alt="MIT license" />
 </p>
 
-<p align="center">
-  <a href="https://github.com/yessGlory17/argus/issues"><img src="https://img.shields.io/badge/Report%20a%20Bug-000000?style=for-the-badge&logo=github&logoColor=white" alt="Report a Bug" /></a>
-  <a href="https://github.com/yessGlory17/argus/issues"><img src="https://img.shields.io/badge/Request%20a%20Feature-5865F2?style=for-the-badge&logo=github&logoColor=white" alt="Request a Feature" /></a>
-</p>
+# Argus 繁體中文版
 
-<p align="center"><strong>⭐ If Argus helps you ship better Claude Code sessions, a GitHub Star goes a long way.</strong></p>
+**Argus** 是一個開源 VS Code 擴充功能，把 Claude Code 的 agent 工作階段變成看得見、查得到的東西。它讀取 Claude Code 寫在 `~/.claude/projects/` 的 JSONL 逐字稿，解析每一次工具呼叫、每一段提示與每一顆 token，還原 agent 實際做了什麼——逐步驟、逐檔案、逐美元。不用登入、不上傳任何資料，逐字稿從頭到尾不離開你的機器。
 
-<p align="center">
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#screenshots">Screenshots</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#configuration">Configuration</a> ·
-  <a href="#contributing">Contributing</a>
-</p>
+本倉庫是 [yessGlory17/argus](https://github.com/yessGlory17/argus)（經 Dees7/argus 維護分支）的**繁體中文在地化分支**，除了完整翻譯外也持續加入自己的功能與修正。
 
-# Argus
+## 這個分支多了什麼
+
+**繁體中文在地化**
+- 介面、分析結果、設定說明全面 zh-TW，走 i18n 字典層而非硬替換，`argus.language` 可切 `auto` / `en` / `zh-TW`
+- 日期與時間格式跟隨語系
+
+**加強的即時監看**
+- **執行中 agent 置頂狀態列**：正在跑的 sub-agent 釘在步驟分頁最上方，各顯示最新一則步驟；agent 結束後自動消失，也可手動「標記結束」
+- 正確判定背景 agent 的結束時點（task-notification），被喚醒的 agent 會重新出現
+- **Workflow 支援**：Workflow 派出的 agent（`subagents/workflows/<runId>/`）完整進時間軸、成本統計與置頂狀態列，run 進行中以 journal 即時判定狀態
+- 步驟展開狀態改用穩定識別，多 agent 同時追加步驟時不再跑位
+- 修正長時間監看的檔案描述符洩漏與重掃洪水——大型 workflow 跑數小時後側欄清空、面板凍結的問題已解決
+
+**其他**
+- 成本分頁涵蓋 sub-agent 花費
+- 步驟列顯示所屬 agent 的類型徽章與 transcript id，可追回 `agent-<id>.jsonl`
+
+## 截圖
+
+<p align="center"><strong>步驟</strong> — 可搜尋、可過濾的執行紀錄</p>
+<p align="center"><img src="screenshots/steps.png" alt="Steps tab" width="1280" /></p>
+
+<p align="center"><strong>分析</strong> — 重複讀取、重試迴圈與最佳化建議</p>
+<p align="center"><img src="screenshots/analysis.png" alt="Analysis tab" width="1280" /></p>
+
+<p align="center"><strong>成本</strong> — 逐步驟 token 與美元拆帳、快取歸因</p>
+<p align="center"><img src="screenshots/cost.png" alt="Cost tab" width="1280" /></p>
+
+## 快速開始
+
+### 需求
+
+- VS Code `1.80` 以上
+- 已安裝 Claude Code，工作階段寫在 `~/.claude/projects/`
+- Node.js `18+`（僅從原始碼建置時需要）
+
+### 從 VSIX 安裝（建議）
+
+到 [Releases](https://github.com/Lother/argus/releases) 下載最新的 `.vsix`：
+
+```bash
+code --install-extension argus-claude-0.3.6-zh.vsix
+```
+
+打開 VS Code，點活動列的 **Argus** 眼睛圖示，既有的 Claude Code 工作階段會自動出現。
+
+### 從原始碼建置
+
+```bash
+git clone https://github.com/Lother/argus.git
+cd argus
+npm install
+npm run compile
+npm run build:webview
+npx @vscode/vsce package
+code --install-extension argus-claude-0.3.6.vsix
+```
+
+## 使用方式
+
+1. 點活動列的 **Argus** 眼睛圖示，側欄列出所有工作階段——可搜尋、過濾、分組。
+2. 點任一工作階段開啟分析儀表板。
+3. Claude Code 執行中時把儀表板開著：檔案監看會即時更新步驟、置頂 agent 狀態與成本。
+
+儀表板分頁：**步驟**（完整執行紀錄）、**分析**（規則引擎的發現）、**成本**（token／美元拆帳）、**效能**（效率分數與浪費成本）、**流程**（檔案操作相依圖）、**上下文**（token 預算與快取表現）、**洞察**（模式觀察與建議）、**地圖**（工作階段拓撲鳥瞰）。
+
+## 設定
+
+| 設定 | 預設 | 說明 |
+| --- | --- | --- |
+| `argus.language` | `"auto"` | 介面與分析語言——`"auto"`、`"en"`、`"zh-TW"` |
+| `argus.scanDepth` | `5` | 掃描 `.claude` 目錄的最大深度 |
+| `argus.openLocation` | `"active"` | 工作階段開在哪——`"active"`（目前群組）或 `"beside"`（旁邊分割） |
+| `argus.delete.useTrash` | `true` | 刪除工作階段時移到資源回收筒而非直接刪除 |
+| `argus.searchBar.showModelSelector` | `true` | 搜尋框旁顯示模型選擇器 |
+| `argus.sessionList.showModel` | `true` | 側欄列表顯示模型 |
+| `argus.sessionList.showProject` | `true` | 側欄列表顯示專案 |
+| `argus.steps.sortOrder` | `"newest"` | 步驟預設排序——`"newest"`、`"oldest"`、`"cost-desc"`、`"cost-asc"` |
+| `argus.steps.autoExpand` | `[]` | 預設展開的步驟類型，支援 `*` 萬用字元（如 `["text", "mcp*"]`） |
+| `argus.notes.hideNotes` | `false` | 隱藏工作階段筆記區 |
+| `argus.analysis.realCompactsOnly` | `false` | 只在逐字稿實際標記壓縮處回報壓縮事件，而非從 token 驟降推斷 |
+
+## 授權
+
+MIT — 見 [LICENSE](LICENSE)。原專案版權歸原作者所有。
+
+---
+
+# Argus (original English README)
 
 **Argus** is an open-source VS Code extension that brings deep monitoring and observability to your Claude Code agent sessions. It reads the JSONL transcripts that Claude Code writes to `~/.claude/projects/`, parses every tool call, prompt, and token, and turns them into a coherent, inspectable picture of what your agent actually did — step by step, file by file, dollar by dollar.
 
@@ -40,43 +117,9 @@ Named after the hundred-eyed watchman of Greek mythology, Argus is built for dev
 ## Video
 <div align="center">
   <a href="https://www.youtube.com/watch?v=HmHOI1PBn_M">
-    <img src="https://img.youtube.com/vi/HmHOI1PBn_M/maxresdefault.jpg" alt="Video Başlığı" style="width:100%;">
+    <img src="https://img.youtube.com/vi/HmHOI1PBn_M/maxresdefault.jpg" alt="Argus video" style="width:100%;">
   </a>
 </div>
-
-## Screenshots
-
-<p align="center"><strong>Steps</strong> — searchable, filterable execution log</p>
-<p align="center"><img src="screenshots/steps.png" alt="Steps tab" width="1280" /></p>
-
-<p align="center"><strong>Analysis</strong> — duplicate reads, retry loops, and optimization findings</p>
-<p align="center"><img src="screenshots/analysis.png" alt="Analysis tab" width="1280" /></p>
-
-<p align="center"><strong>Cost</strong> — per-step token and USD breakdown with cache attribution</p>
-<p align="center"><img src="screenshots/cost.png" alt="Cost tab" width="1280" /></p>
-
-<p align="center"><strong>Performance</strong> — efficiency scoring and wasted-cost analysis</p>
-<p align="center"><img src="screenshots/performance.png" alt="Performance tab" width="1280" /></p>
-
-<p align="center"><strong>Flow</strong> — interactive dependency graph of file operations</p>
-<p align="center"><img src="screenshots/flow.png" alt="Flow tab" width="1280" /></p>
-
-<p align="center"><strong>Context</strong> — token usage, cache-hit ratio, window utilization</p>
-<p align="center"><img src="screenshots/context.png" alt="Context tab" width="1280" /></p>
-
-<p align="center"><strong>Insights</strong> — recommendations and pattern recognition</p>
-<p align="center"><img src="screenshots/insights.png" alt="Insights tab" width="1280" /></p>
-
-## Table of Contents
-
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Architecture](#architecture)
-- [Use Cases](#use-cases)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## Features
 
@@ -86,7 +129,7 @@ Named after the hundred-eyed watchman of Greek mythology, Argus is built for dev
 | --- | --- |
 | **Live session watcher** | File-watcher tails the active JSONL transcript and re-renders the dashboard as Claude Code writes new events |
 | **Automatic discovery** | Recursively scans `~/.claude/projects/` and surfaces every session — no manual import |
-| **Subagent tracking** | Detects spawned subagents, attributes their tool calls, and links them back to the parent step |
+| **Subagent tracking** | Detects spawned subagents (Task and Workflow), attributes their tool calls, and links them back to the parent step |
 | **Cost telemetry** | Per-step and per-session token + USD cost, broken down by input / output / cache read / cache write |
 | **Context-window metrics** | Cache-hit ratio, window utilization, and compaction-event detection |
 
@@ -105,9 +148,9 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 
 | Tab | What's inside |
 | --- | --- |
-| **Steps** | Full execution log with text search, multi-tool filter, status filter, sort by time/cost, per-step duration, per-tool icons; user turns and compaction boundaries appear as their own rows |
+| **Steps** | Full execution log with text search, multi-tool filter, status filter, sort by time/cost, per-step duration, per-tool icons; user turns and compaction boundaries appear as their own rows; running agents pin their latest step to the top |
 | **Analysis** | All findings from the rule engine with severity, evidence, and jump-to-step links |
-| **Cost** | Token & USD breakdown, model attribution, cache-hit ratio, spending charts |
+| **Cost** | Token & USD breakdown (sub-agents included), model attribution, cache-hit ratio, spending charts |
 | **Performance** | Efficiency score, wasted-cost estimate, bottleneck timing |
 | **Flow** | D3-powered dependency graph of file Reads / Writes / Edits across steps |
 | **Context** | Token budget, cache performance, I/O distribution, compaction markers |
@@ -121,36 +164,6 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 - Group by project, by model, or flat list
 - Sticky headers, tabs, and filters that stay put while content scrolls
 - Native dark-mode integration with the active VS Code theme
-
-## Quick Start
-
-### Requirements
-
-- VS Code `1.80` or later
-- Node.js `18+` (only for building from source)
-- An existing Claude Code installation that writes sessions to `~/.claude/projects/`
-
-### Install from VSIX (recommended)
-
-Grab the latest `.vsix` from the [Releases page](https://github.com/yessGlory17/argus/releases) and install it:
-
-```bash
-code --install-extension argus-claude-0.3.0.vsix
-```
-
-Open VS Code, click the **Argus** eye icon in the Activity Bar, and your existing Claude Code sessions appear automatically. No login, no upload, no config — transcripts never leave your machine.
-
-### Build from source
-
-```bash
-git clone https://github.com/yessGlory17/argus.git
-cd argus/argus-vscode
-npm install
-npm run compile
-npm run build:webview
-npx vsce package
-code --install-extension argus-claude-0.3.0.vsix
-```
 
 ## Usage
 
@@ -172,28 +185,6 @@ Available via Command Palette (`Ctrl/Cmd + Shift + P`):
 | `Argus: Group by Project` | Group sessions by their project directory |
 | `Argus: Group by Model` | Group sessions by Claude model |
 | `Argus: Flat List` | Disable grouping |
-
-## Configuration
-
-Argus exposes the following VS Code settings:
-
-```json
-{
-  "argus.scanDepth": 5,
-  "argus.language": "en",
-  "argus.steps.autoExpand": ["text", "thinking", "mcp*"]
-}
-```
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `argus.scanDepth` | `5` | Maximum directory depth when scanning `.claude` directories |
-| `argus.language` | `"en"` | UI / findings language — `"en"` or `"tr"` |
-| `argus.openLocation` | `"active"` | Where a session opens — `"active"` (tab in the current group) or `"beside"` |
-| `argus.searchBar.showModelSelector` | `true` | Show the model selector next to the search box in the Sessions view |
-| `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
-| `argus.steps.autoExpand` | `[]` | Step types that render expanded in the Steps tab |
-| `argus.analysis.realCompactsOnly` | `false` | Report a compaction only where the transcript marks one, instead of inferring it from a token drop |
 
 ### User turns in the Steps tab
 
@@ -248,9 +239,10 @@ hand always wins over the setting. Changes apply to already-open sessions.
 ### Project layout
 
 ```
-argus-vscode/
+argus/
 ├── src/                              # Extension host
 │   ├── extension.ts                  # Entry point, command registration
+│   ├── i18n/                         # Locale core + message tables (en / zh-TW)
 │   ├── types/                        # Models, parser, filter state
 │   ├── services/
 │   │   ├── discoveryService.ts       # Session discovery + file system scan
@@ -284,15 +276,6 @@ interface AnalysisRule {
 
 Built-in rules: `DuplicateReadRule`, `UnusedReadRule`, `RetryLoopRule`, `FailedToolRule`, `ContextPressureRule`, `CompactionDetectedRule`. Adding a new rule is a single file plus one entry in the analyzer registry.
 
-## Use Cases
-
-| For developers | For teams | For researchers |
-| --- | --- | --- |
-| See how Claude Code actually approaches your tasks | Audit AI usage and cost across projects | Study LLM-driven development patterns at the trace level |
-| Tighten prompts based on real token spend | Identify and codify best practices | Analyze tool-call distributions and retry behavior |
-| Catch retry loops and duplicate reads early | Build internal training material from real sessions | Investigate context-window and compaction strategies |
-| Track per-session AI-assisted development cost | Set budgets and monitor against them | Compare model behavior on identical workloads |
-
 ## Contributing
 
 Contributions are welcome.
@@ -311,5 +294,5 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-<p align="center"><sub>Built by developers, for developers running Claude Code in anger.</sub></p>
-<p align="center"><sub>⭐ Star the repo if Argus saves you tokens, time, or sanity.</sub></p>
+<p align="center"><sub>原作：<a href="https://github.com/yessGlory17/argus">yessGlory17/argus</a>（Ozgur Kurucan）· 繁中分支維護：<a href="https://github.com/Lother/argus">Lother</a></sub></p>
+<p align="center"><sub>⭐ 如果 Argus 幫你省下 token、時間或理智，給個星星吧。</sub></p>
