@@ -1,15 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { RawEvent } from '../types/parser';
+import { ApiError, RawEvent } from '../types/parser';
 import {
   Attachment,
   HistoryEntry,
   SessionDetail,
   Step,
+  StepPermission,
   SubagentInfo,
   calculateCost,
   getModelPricing,
+  isSystemStep,
 } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 
@@ -42,6 +44,7 @@ const TASK_NOTIFICATION_RE =
 
 const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/;
 const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/;
+const COMMAND_STDOUT_RE = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/;
 
 /**
  * How far into a transcript the metadata scan keeps looking for the pieces it
@@ -82,6 +85,15 @@ function extensionFor(mediaType: string): string {
   const subtype = mediaType.split('/')[1] ?? '';
   const cleaned = subtype.replace(/^x-/, '').replace(/[^a-z0-9]/gi, '');
   return cleaned || 'bin';
+}
+
+/** `JSON.parse` for text that is only maybe JSON: undefined instead of a throw. */
+function tryParseJson(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Decoded byte count of a base64 payload, without decoding it. */
@@ -143,6 +155,94 @@ function walkBlobs(
   }
 }
 
+/**
+ * The transcript reordered so a `tool_result` never precedes the `tool_use` it
+ * answers. Ordinarily it cannot: the call is written, then the result. But a
+ * tool the harness resolves in-process — ToolSearch above all — finishes in the
+ * same millisecond it was requested, and the two lines occasionally reach the
+ * file inverted. The parent chain still records which happened first; only the
+ * byte order lies. Reading such a session forward, the result arrives before
+ * any step exists to hang it on and is dropped, so the call renders with no
+ * output at all.
+ *
+ * Inverted events are moved to just after their call. Everything else keeps
+ * its place, and a transcript with nothing out of order comes back untouched.
+ */
+function orderToolResults(events: RawEvent[]): RawEvent[] {
+  // Where each `tool_use` id was requested.
+  const callAt = new Map<string, number>();
+  events.forEach((event, i) => {
+    const content = event.message?.content;
+    if (!Array.isArray(content)) {
+      return;
+    }
+    for (const block of content as any[]) {
+      if (block?.type === 'tool_use' && typeof block.id === 'string' && !callAt.has(block.id)) {
+        callAt.set(block.id, i);
+      }
+    }
+  });
+
+  // Position to sort by: its own index, except for a result that ran ahead of
+  // its call, which lands immediately behind the last call it answers. Ties
+  // keep their relative order, so two results of one message stay paired with
+  // it in the order the transcript wrote them.
+  let inverted = false;
+  const keyed = events.map((event, i) => {
+    const content = event.message?.content;
+    let key = i;
+    if (Array.isArray(content)) {
+      for (const block of content as any[]) {
+        if (block?.type !== 'tool_result') {
+          continue;
+        }
+        const at = callAt.get(block.tool_use_id);
+        if (at !== undefined && at > i) {
+          key = Math.max(key, at + 0.5);
+          inverted = true;
+        }
+      }
+    }
+    return { event, key, i };
+  });
+
+  if (!inverted) {
+    return events;
+  }
+  return keyed
+    .sort((a, b) => (a.key === b.key ? a.i - b.i : a.key - b.key))
+    .map(entry => entry.event);
+}
+
+/**
+ * The same value with every base64 payload replaced by a one-line marker. A
+ * result that carried a screenshot would otherwise be held twice — once as the
+ * megabytes on `step.toolResult`, once as the attachment the webview fetches
+ * on demand — and the raw view would be a wall of base64. The bytes stay
+ * reachable: `collectEventAttachments` indexes them by path in the untouched
+ * event.
+ */
+function withoutBlobBytes(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(withoutBlobBytes);
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const blob = readBlobNode(value);
+  if (blob) {
+    const marker = `[base64 · ${base64Size(blob[0])} bytes]`;
+    return typeof value.base64 === 'string'
+      ? { ...value, base64: marker }
+      : { ...value, data: marker };
+  }
+  const copy: Record<string, any> = {};
+  for (const [key, child] of Object.entries(value)) {
+    copy[key] = withoutBlobBytes(child);
+  }
+  return copy;
+}
+
 /** A blob found in an event, with the path that leads back to its bytes. */
 interface EventAttachment {
   path: string;
@@ -181,6 +281,79 @@ function attachTo(step: Step, attachments: Attachment[]): void {
     list.push(attachment);
   }
   step.attachments = list;
+}
+
+/**
+ * `toolDenialKind` → who stopped the call. Every value Claude Code writes is
+ * here; an unrecognised one still becomes a step permission (with the raw kind
+ * as its label) rather than disappearing, because the fact that a call was
+ * refused matters more than our knowing the word for it.
+ */
+const DENIAL_SOURCES: Record<string, { decidedBy: StepPermission['decidedBy']; label: string }> = {
+  'user-rejected': { decidedBy: 'user', label: 'Denied by user' },
+  'permission-rule': { decidedBy: 'rule', label: 'Denied by permission rule' },
+  'automode-blocked': { decidedBy: 'automode', label: 'Blocked by auto mode' },
+  'automode-unavailable': { decidedBy: 'automode', label: 'Auto mode unavailable' },
+  cancelled: { decidedBy: 'user', label: 'Cancelled by user' },
+};
+
+// The reason travels inside the refusal text rather than a field of its own:
+// what the person typed when they said no, and what the auto-mode classifier
+// objected to. Both are the sentence after a fixed lead-in.
+const USER_REASON_RE = /following reason for the rejection:\s*([\s\S]+)$/i;
+const AUTOMODE_REASON_RE = /auto mode classifier\.\s*Reason:\s*([\s\S]*?)(?:\s*If you have other tasks|$)/i;
+
+// Pre-2.1.198 transcripts have no `toolDenialKind`. This sentence is all that
+// is left of a refusal there — it says a call was stopped, never by what.
+const LEGACY_DENIAL_RE = /user doesn't want to proceed with this tool use/i;
+
+/**
+ * What a refusal says, as one line. Never the whole message: the full text is
+ * already in the tool result below it, and the boilerplate about not working
+ * around the denial is the same on every one of them.
+ */
+function denialReason(text: string): string | undefined {
+  const reason = USER_REASON_RE.exec(text)?.[1] ?? AUTOMODE_REASON_RE.exec(text)?.[1];
+  return reason?.trim() || undefined;
+}
+
+/** The refusal text, whatever shape `toolUseResult` took on this transcript. */
+function denialText(result: any, fallback: string): string {
+  if (typeof result === 'string') {
+    return result;
+  }
+  if (result && typeof result === 'object' && typeof (result as any).content === 'string') {
+    return (result as any).content;
+  }
+  return fallback;
+}
+
+/**
+ * The decision a `PreToolUse` hook printed, or null when it printed nothing —
+ * a hook that only observed the call, or one whose output is not the JSON
+ * Claude Code reads. `ask` is a decision to not decide: it hands the call to
+ * the person, so whatever happened next is off the record and the step is left
+ * unmarked.
+ */
+function hookDecision(attachment: RawEvent['attachment']): StepPermission | null {
+  const parsed = tryParseJson(attachment?.stdout ?? '');
+  const output = parsed?.hookSpecificOutput;
+  const decision = output?.permissionDecision;
+  if (decision !== 'allow' && decision !== 'deny') {
+    return null;
+  }
+  const hookName = typeof attachment?.hookName === 'string' ? attachment.hookName : undefined;
+  const reason =
+    typeof output.permissionDecisionReason === 'string'
+      ? output.permissionDecisionReason.trim() || undefined
+      : undefined;
+  return {
+    outcome: decision === 'allow' ? 'allowed' : 'denied',
+    decidedBy: 'hook',
+    label: decision === 'allow' ? 'Allowed by hook' : 'Denied by hook',
+    reason,
+    hookName,
+  };
 }
 
 interface QuickMetadata {
@@ -416,11 +589,15 @@ export class ParserService {
    * Build a SessionDetail from parsed events
    */
   buildSession(
-    events: RawEvent[],
+    rawEvents: RawEvent[],
     sessionId: string,
     prompt: string,
     project: string
   ): SessionDetail {
+    // A single forward pass reads each result against the calls seen so far,
+    // so the few results a transcript records ahead of their call are put
+    // back behind them first.
+    const events = orderToolResults(rawEvents);
     const steps: Step[] = [];
     const filesRead = new Set<string>();
     const filesWritten = new Set<string>();
@@ -447,18 +624,26 @@ export class ParserService {
     const toolCallByUseId = new Map<string, Partial<Step>>();
 
     // One API response is written as several JSONL events — one per content
-    // block — each repeating the same `message.id` and the same `usage`.
-    // Charging every event would multiply the bill by the block count, so a
-    // message is priced the first time its id is seen and its siblings cost 0.
+    // block — each repeating the same `message.id`. Charging every event would
+    // multiply the bill by the block count, so a message is priced the first
+    // time its id is seen and its siblings cost 0.
     const chargedMessages = new Set<string>();
     // Cost priced but not yet attached to a step, keyed by message id.
     const unbilled = new Map<string, number>();
+    // The `usage` those events carry is *not* identical: input and cache counts
+    // repeat, but `output_tokens` accumulates as the response streams, so early
+    // events hold a partial count and only the last one is final. Pricing off
+    // whichever event happens to come first therefore undercharges output.
+    const finalUsage = this.findFinalUsage(events);
     // Messages that render to nothing. With thinking `display: "omitted"` —
     // the default on current models — a reasoning turn is recorded as a
     // `thinking` block with empty text, so a message can consist solely of
     // blocks that produce no step while still having been billed. Those get a
     // placeholder step rather than dropping the charge off the timeline.
     const blankMessages = this.findBlankMessages(events);
+    // Which slash command each `local_command` invocation was, keyed by its
+    // uuid, so the output event that follows can name the command it came from.
+    const localCommands = new Map<string, string>();
 
     for (const event of events) {
       // Session-level model, for display only. Costs use each message's own
@@ -553,6 +738,91 @@ export class ParserService {
         }
       }
 
+      // A hook that refused a tool call. It has no message of its own — the
+      // harness records it as a bare `attachment` event — so without a step of
+      // its own the timeline shows a call whose result simply never arrives,
+      // even though the model was handed the error and changed course over it.
+      if (event.type === 'attachment' && event.attachment?.type === 'hook_blocking_error') {
+        const step = this.buildHookErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // A `PreToolUse` hook's verdict on the call it fired on. The transcript
+      // writes it between the `tool_use` and its result, so the step it belongs
+      // to is already built. This is the only place a permission that let a
+      // call *through* is ever recorded — everything else on the record is a
+      // refusal — so it is worth reading even though most of them are a
+      // whitelist saying yes to a `git status`.
+      if (event.type === 'attachment' && event.attachment?.hookEvent === 'PreToolUse') {
+        const target = event.attachment.toolUseID
+          ? toolCallByUseId.get(event.attachment.toolUseID)
+          : undefined;
+        if (target && typeof target.index === 'number') {
+          const decision =
+            event.attachment.type === 'hook_blocking_error'
+              ? // A hook that blocked the call: it gets its own system step for
+                // the error text, but the call itself should say why it never ran.
+                ({
+                  outcome: 'denied',
+                  decidedBy: 'hook',
+                  label: 'Denied by hook',
+                  hookName:
+                    typeof event.attachment.hookName === 'string'
+                      ? event.attachment.hookName
+                      : undefined,
+                } as StepPermission)
+              : hookDecision(event.attachment);
+          // A refusal already on the step outranks a hook's yes: two hooks can
+          // fire on one call, and the one that stopped it is the answer.
+          if (decision && steps[target.index].permission?.outcome !== 'denied') {
+            steps[target.index].permission = decision;
+          }
+        }
+      }
+
+      // A hook that failed and was let through anyway. Nothing downstream shows
+      // it: the tool call went ahead, the turn ended, and the only trace that a
+      // notification never fired or a formatter never ran is this event. They
+      // repeat — the same unreadable script fails on every turn — which is the
+      // point, so each one stays its own row.
+      if (event.type === 'attachment' && event.attachment?.type === 'hook_non_blocking_error') {
+        const step = this.buildHookNonBlockingErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // A request that failed and was retried. The attempt that worked is
+      // written as an ordinary assistant message, so without these the minute a
+      // turn spent on ten 429s reads as the model having been slow.
+      if (event.type === 'system' && event.subtype === 'api_error') {
+        const step = this.buildApiErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // A slash command the CLI answered by itself — /resume, /model, /mcp. It
+      // never reaches the model, so the timeline otherwise shows the session
+      // pausing for no reason, and for the commands that print something the
+      // output is the only explanation of what the person just read.
+      if (event.type === 'system' && event.subtype === 'local_command') {
+        const step = this.buildLocalCommandStep(event, steps.length, localCommands);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // What the Stop hooks did when a turn ended.
+      if (event.type === 'system' && event.subtype === 'stop_hook_summary') {
+        const step = this.buildStopHookStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
       // Context compaction. Claude Code records it as a user event carrying
       // the hand-off summary that replaces the dropped history — there is no
       // assistant message for it, so give it a step of its own to keep the
@@ -573,7 +843,12 @@ export class ParserService {
 
       // Process assistant messages
       if (event.type === 'assistant' && event.message) {
-        const usage = event.message.usage;
+        // Always the message's final counts, never this event's partial ones,
+        // so every step of a response reports the same usage and any consumer
+        // that de-duplicates by message id agrees with the total.
+        const usage =
+          (event.message.id ? finalUsage.get(event.message.id) : undefined) ??
+          event.message.usage;
         const eventModel =
           event.message.model && event.message.model !== '<synthetic>'
             ? event.message.model
@@ -744,7 +1019,7 @@ export class ParserService {
             }
 
             const result = legacyApplies
-              ? event.toolUseResult
+              ? withoutBlobBytes(event.toolUseResult)
               : this.extractToolResultBody(block);
             if (result !== undefined) {
               steps[toolStep.index].toolResult = JSON.stringify(result);
@@ -758,6 +1033,31 @@ export class ParserService {
               isError = true;
             }
             steps[toolStep.index].toolSuccess = !isError;
+
+            // Why the call never ran, when it did not. `toolDenialKind` names
+            // the source outright; older transcripts only have the sentence the
+            // model was shown, which says a call was refused but not by whom —
+            // recorded as `unknown` rather than guessed at.
+            if (isError) {
+              const text = denialText(result, typeof block?.content === 'string' ? block.content : '');
+              const kind = event.toolDenialKind;
+              if (typeof kind === 'string' && kind) {
+                const known = DENIAL_SOURCES[kind];
+                steps[toolStep.index].permission = {
+                  outcome: 'denied',
+                  decidedBy: known?.decidedBy ?? 'unknown',
+                  label: known?.label ?? `Denied (${kind})`,
+                  reason: denialReason(text),
+                };
+              } else if (LEGACY_DENIAL_RE.test(text)) {
+                steps[toolStep.index].permission = {
+                  outcome: 'denied',
+                  decidedBy: 'unknown',
+                  label: 'Denied — source not recorded',
+                  reason: denialReason(text),
+                };
+              }
+            }
 
             // Screenshots and other blobs a tool handed back. They belong to
             // the call that produced them, so they hang off the tool step
@@ -812,12 +1112,352 @@ export class ParserService {
   }
 
   /**
-   * The body of a `tool_result` content block, flattened to text. The `content`
-   * field is either a plain string or a list of blocks: `text` for ordinary
-   * output, `tool_reference` for a ToolSearch result (which names the tools it
-   * loaded and carries no other payload), `image` for screenshots.
+   * Step for an `attachment/hook_blocking_error` event — a hook that blocked a
+   * tool call.
+   *
+   * `blockingError` holds the message the model was shown plus the command that
+   * produced it. The message already quotes the command in every transcript we
+   * have (`[<command>]: <stderr>`), so the command is only prepended where it
+   * does not, rather than printed twice.
    */
-  private extractToolResultBody(block: any): string | undefined {
+  private buildHookErrorStep(event: RawEvent, index: number): Step | null {
+    const attachment = event.attachment ?? {};
+    const raw = attachment.blockingError;
+    const detail = typeof raw === 'string' ? { blockingError: raw, command: '' } : raw ?? {};
+    const message = typeof detail.blockingError === 'string' ? detail.blockingError.trim() : '';
+    const command = typeof detail.command === 'string' ? detail.command.trim() : '';
+    // A shape we don't recognise still reaches the timeline as its own JSON —
+    // an unreadable step beats a missing one.
+    const text = message || (raw !== undefined ? JSON.stringify(raw) : '');
+    if (!text) {
+      return null;
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'hook_blocking_error',
+      systemSeverity: 'error',
+      systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: command && !text.includes(command) ? `$ ${command}\n\n${text}` : text,
+      cost: 0,
+    };
+  }
+
+  /**
+   * Step for an `attachment/hook_non_blocking_error` event — a hook that failed
+   * without stopping anything.
+   *
+   * Read as a shell would report it: the command, what it printed, then how it
+   * ended. `stderr` carries the failure in every transcript we have and `stdout`
+   * is empty, but both are shown when both are there — a hook that logged its
+   * way up to the failure is exactly the one being read.
+   *
+   * The event names what the hook fired on in `toolUseID`; it is kept on the
+   * step so a `PostToolUse` failure can be tied back to its tool call. For a
+   * `Stop` hook, which fires on no tool, it is the uuid of the message that
+   * ended the turn.
+   */
+  private buildHookNonBlockingErrorStep(event: RawEvent, index: number): Step | null {
+    const attachment = event.attachment ?? {};
+    const command = typeof attachment.command === 'string' ? attachment.command.trim() : '';
+    const stderr = typeof attachment.stderr === 'string' ? attachment.stderr.trim() : '';
+    const stdout = typeof attachment.stdout === 'string' ? attachment.stdout.trim() : '';
+    const exitCode = typeof attachment.exitCode === 'number' ? attachment.exitCode : undefined;
+    const durationMs =
+      typeof attachment.durationMs === 'number' ? attachment.durationMs : undefined;
+
+    // The status line is the one part that is always knowable, so a hook that
+    // printed nothing still reaches the timeline saying it failed.
+    const status = [
+      exitCode !== undefined ? `exit ${exitCode}` : '',
+      durationMs !== undefined ? `${durationMs}ms` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const body = [command ? `$ ${command}` : '', stderr, stdout, status]
+      .filter(Boolean)
+      .join('\n\n');
+    if (!body) {
+      return null;
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'hook_non_blocking_error',
+      systemSeverity: 'error',
+      systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      toolUseId: typeof attachment.toolUseID === 'string' ? attachment.toolUseID : undefined,
+      content: body,
+      cost: 0,
+    };
+  }
+
+  /**
+   * Step for a `system/api_error` event — a request that failed and was retried.
+   *
+   * One step per event, so a burst of retries reads as the burst it was: the
+   * rows sit between the same two steps the wait happened between, and their
+   * timestamps show how long the backoff actually took. Nothing is folded
+   * together — ten identical 429s are ten attempts, and collapsing them would
+   * hide the one number worth having.
+   */
+  private buildApiErrorStep(event: RawEvent, index: number): Step | null {
+    const error = event.error;
+    if (error === undefined || error === null) {
+      return null;
+    }
+
+    // The whole object follows the headline, so a shape we read wrongly still
+    // hands over everything the transcript had — request ids and proxy headers
+    // included, which is what a support ticket ends up needing.
+    const detail =
+      typeof error === 'object' ? `\n\n\`\`\`json\n${JSON.stringify(error, null, 2)}\n\`\`\`` : '';
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'api_error',
+      systemSeverity: 'error',
+      systemSource: this.apiErrorSource(event),
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: `${this.apiErrorHeadline(error) || 'API request failed'}${detail}`,
+      cost: 0,
+    };
+  }
+
+  /**
+   * Step for a `system/local_command` event — a slash command the CLI ran
+   * without asking the model.
+   *
+   * One command is two events sharing the subtype: the invocation, then its
+   * output. They stay two rows, because they are two things that happened and
+   * a long `/status` dump under the row that asked for it is exactly what a
+   * user would then have to fold away again. The invocation records its name in
+   * `commands` so the output can be labelled `/status · output` instead of
+   * standing there anonymous — the two events are only linked by `parentUuid`.
+   */
+  private buildLocalCommandStep(
+    event: RawEvent,
+    index: number,
+    commands: Map<string, string>
+  ): Step | null {
+    const raw = typeof event.content === 'string' ? event.content : '';
+    if (raw.trim() === '') {
+      return null;
+    }
+
+    const step = (source: string | undefined, content: string): Step => ({
+      index,
+      type: 'system',
+      systemKind: 'local_command',
+      // The CLI answering a slash command is the CLI working.
+      systemSeverity: 'notice',
+      systemSource: source,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content,
+      cost: 0,
+    });
+
+    const name = raw.match(COMMAND_NAME_RE)?.[1].trim() ?? '';
+    if (name) {
+      commands.set(event.uuid, name);
+      // `<command-message>` is the name without its slash in every transcript
+      // we have, so it is dropped rather than printed beside it.
+      const args = raw.match(COMMAND_ARGS_RE)?.[1].trim() ?? '';
+      return step(name, args);
+    }
+
+    const stdout = raw.match(COMMAND_STDOUT_RE)?.[1] ?? '';
+    // Neither shape: kept whole rather than guessed at, so a format we have not
+    // seen still reaches the timeline.
+    const text = (stdout || raw).trim();
+    if (text === '') {
+      return null;
+    }
+    const from = event.parentUuid ? commands.get(event.parentUuid) : undefined;
+    return step(from ? `${from} · output` : 'output', text);
+  }
+
+  /**
+   * Step for a `system/stop_hook_summary` event — the Stop hooks that ran when
+   * a turn ended.
+   *
+   * Written after every turn, so most of these say nothing but "one hook ran,
+   * it took 7ms". They are still one row each: the count in the header button
+   * is how often the hooks fired, and the rows worth finding — a hook that
+   * errored, or one that refused to let the turn end — are found by reading
+   * down the same list rather than by trusting this parser's idea of dull.
+   */
+  private buildStopHookStep(event: RawEvent, index: number): Step | null {
+    const hooks = Array.isArray(event.hookInfos) ? event.hookInfos : [];
+    const errors = (Array.isArray(event.hookErrors) ? event.hookErrors : [])
+      .map(error => (typeof error === 'string' ? error.trim() : ''))
+      .filter(Boolean);
+    const added = (Array.isArray(event.hookAdditionalContext) ? event.hookAdditionalContext : [])
+      .map(text => (typeof text === 'string' ? text.trim() : ''))
+      .filter(Boolean);
+    const count = typeof event.hookCount === 'number' ? event.hookCount : hooks.length;
+    if (count === 0 && errors.length === 0) {
+      return null;
+    }
+
+    const stopReason = typeof event.stopReason === 'string' ? event.stopReason.trim() : '';
+    const blocked = event.preventedContinuation === true;
+
+    const lines: string[] = hooks.map(hook => {
+      const command = typeof hook?.command === 'string' ? hook.command.trim() : '(unnamed hook)';
+      const ms = typeof hook?.durationMs === 'number' ? ` (${hook.durationMs}ms)` : '';
+      return `$ ${command}${ms}`;
+    });
+    if (blocked) {
+      // The one outcome that changed the run: the turn did not end here.
+      lines.push('', `continuation blocked${stopReason ? `: ${stopReason}` : ''}`);
+    }
+    for (const error of errors) {
+      lines.push('', error);
+    }
+    for (const text of added) {
+      lines.push('', text);
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'stop_hook_summary',
+      // Hooks having run is not a failure; a hook that fell over, or one that
+      // sent the model back to work, is.
+      systemSeverity: errors.length > 0 || blocked ? 'error' : 'notice',
+      systemSource: this.stopHookSource(count, errors.length, blocked),
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: lines.join('\n').trim(),
+      cost: 0,
+    };
+  }
+
+  /**
+   * What is shown ahead of a stop-hook row: how many hooks ran and whether
+   * anything came of it — `2 hooks · 1 error`, `1 hook · blocked`.
+   */
+  private stopHookSource(count: number, errors: number, blocked: boolean): string {
+    const ran = `${count} hook${count === 1 ? '' : 's'}`;
+    const failed = errors > 0 ? `${errors} error${errors === 1 ? '' : 's'}` : '';
+    return [ran, blocked ? 'blocked' : '', failed].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * What is shown ahead of the message on an API error row: what came back and
+   * which attempt this was — `429 · retry 1/10`. A request that never reached
+   * the API has no status, so the socket's code stands in for one.
+   */
+  private apiErrorSource(event: RawEvent): string | undefined {
+    const error = typeof event.error === 'object' && event.error ? event.error : {};
+    const code = error.connection?.code ?? error.cause?.code;
+    const what =
+      (typeof error.status === 'number' ? String(error.status) : '') ||
+      (typeof code === 'string' ? code : '') ||
+      'api error';
+    const attempt =
+      typeof event.retryAttempt === 'number'
+        ? `retry ${event.retryAttempt}${
+            typeof event.maxRetries === 'number' ? `/${event.maxRetries}` : ''
+          }`
+        : '';
+    return [what, attempt].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * The one line an API error is worth. `ApiError` documents the shapes; here
+   * they collapse to a sentence, with the status left out because
+   * `apiErrorSource` already carries it.
+   */
+  private apiErrorHeadline(error: ApiError | string): string {
+    if (typeof error === 'string') {
+      return error.trim();
+    }
+
+    const parts: string[] = [];
+    const message = typeof error.message === 'string' ? error.message.trim() : '';
+    // "429 {…}" — the JSON body after the status says what the status alone
+    // cannot ("daily cost limit exceeded: 30.09 >= 30.00").
+    const brace = message.indexOf('{');
+    const body = brace >= 0 ? tryParseJson(message.slice(brace)) : undefined;
+    if (body !== undefined) {
+      parts.push(this.describeErrorBody(body) || message);
+    } else if (message) {
+      parts.push(message);
+    } else {
+      parts.push(this.describeErrorBody(error.error));
+    }
+
+    // A transport failure has no body at all, only the socket that gave up —
+    // and where there is both, "Connection error." alone names neither.
+    const connection = error.connection ?? error.cause;
+    if (connection) {
+      const code = typeof connection.code === 'string' ? connection.code : '';
+      // The older events carry no sentence, only the URL that was being called.
+      const detail =
+        (typeof connection.message === 'string' ? connection.message.trim() : '') ||
+        (typeof connection.path === 'string' ? connection.path.trim() : '');
+      parts.push([code, detail].filter(Boolean).join(': '));
+    }
+
+    const headline = parts.filter(Boolean).join(' — ');
+    // Nothing recognised: the raw line the harness formatted beats an empty row.
+    return headline || (typeof error.formatted === 'string' ? error.formatted.trim() : '');
+  }
+
+  /**
+   * The sentence inside an error body. A proxy wraps the real body in another
+   * `error` — twice, for the LiteLLM gateway — and a quota refusal splits
+   * itself between a headline (`error`) and the numbers behind it
+   * (`stats.message`), so both are followed and joined.
+   */
+  private describeErrorBody(body: any, depth = 0): string {
+    if (typeof body === 'string') {
+      return body.trim();
+    }
+    if (!body || typeof body !== 'object' || depth > 3) {
+      return '';
+    }
+    const own =
+      this.describeErrorBody(body.error, depth + 1) ||
+      (typeof body.message === 'string' ? body.message.trim() : '');
+    const stats = body.stats;
+    const numbers =
+      stats && typeof stats === 'object' && typeof stats.message === 'string'
+        ? stats.message.trim()
+        : '';
+    return [own, numbers].filter(Boolean).join(' — ');
+  }
+
+  /**
+   * The body of a `tool_result` content block. The `content` field is either a
+   * plain string or a list of blocks — `text`, `image`, `tool_reference`,
+   * `search_result`, `document`, plus the MCP-only `audio`, `resource` and
+   * `resource_link` that a server can hand back.
+   *
+   * A list of nothing but text is flattened, because that is what it is and it
+   * keeps the step searchable as prose. Any other list is kept block by block:
+   * flattening it used to mean silently dropping every type this method had no
+   * branch for, and the renderer can only lay out what reaches it. Base64
+   * payloads are dropped on the way through — the attachment carries them.
+   */
+  private extractToolResultBody(block: any): string | any[] | undefined {
     if (!block) {
       return undefined;
     }
@@ -826,19 +1466,13 @@ export class ParserService {
       return content;
     }
     if (Array.isArray(content)) {
-      const parts: string[] = [];
-      for (const c of content) {
-        if (typeof c === 'string') {
-          parts.push(c);
-        } else if (c?.type === 'text' && typeof c.text === 'string') {
-          parts.push(c.text);
-        } else if (c?.type === 'tool_reference' && typeof c.tool_name === 'string') {
-          parts.push(c.tool_name);
-        } else if (c?.type === 'image') {
-          parts.push('[image]');
-        }
+      const textOnly = content.every(
+        c => typeof c === 'string' || (c?.type === 'text' && typeof c.text === 'string')
+      );
+      if (!textOnly) {
+        return withoutBlobBytes(content);
       }
-      return parts.join('\n');
+      return content.map(c => (typeof c === 'string' ? c : c.text)).join('\n');
     }
     if (content === undefined || content === null) {
       return undefined;
@@ -1081,6 +1715,10 @@ export class ParserService {
       let parentAgentId: string | undefined;
       let toolUseId: string | undefined;
       let spawnDepth: number | undefined;
+      // Alias the spawning call asked for (`opus`, `haiku`), not a model id.
+      // Only used when the transcript itself names no model — an agent that
+      // died before its first assistant turn still knows what it was to run.
+      let metaModel: string | undefined;
       const metaPath = path.join(dir, `agent-${agentId}.meta.json`);
       if (fs.existsSync(metaPath)) {
         try {
@@ -1091,6 +1729,7 @@ export class ParserService {
           parentAgentId = typeof meta.parentAgentId === 'string' ? meta.parentAgentId : undefined;
           toolUseId = typeof meta.toolUseId === 'string' ? meta.toolUseId : undefined;
           spawnDepth = typeof meta.spawnDepth === 'number' ? meta.spawnDepth : undefined;
+          metaModel = typeof meta.model === 'string' ? meta.model : undefined;
         } catch {
           // ignore malformed meta
         }
@@ -1099,7 +1738,7 @@ export class ParserService {
       return {
         agentId,
         prompt,
-        model: session.model,
+        model: session.model || metaModel || '',
         agentType,
         description,
         parentAgentId,
@@ -1111,7 +1750,9 @@ export class ParserService {
         filesRead: session.filesRead,
         filesWritten: session.filesWritten,
         toolsUsed: session.toolsUsed,
-        stepCount: session.steps.length,
+        // What the agent did, so harness events are left out — this is the
+        // number the "N agent steps" toggle shows next to the spawning Task.
+        stepCount: session.steps.filter(step => !isSystemStep(step)).length,
         totalCost: session.totalCost,
         steps: session.steps,
         agentFinishedAt: session.agentFinishedAt,
@@ -1370,6 +2011,37 @@ export class ParserService {
         .join('\n');
     }
     return '';
+  }
+
+  /**
+   * Final `usage` of every assistant message, keyed by message id.
+   *
+   * A response is spread over one event per content block, and `output_tokens`
+   * grows across them as the response streams — 4, 4, 330 for one message is a
+   * real sequence from a transcript. Only the last event carries the complete
+   * count, so it is the one that must be priced; the earlier ones are
+   * snapshots taken mid-stream. Input and cache counts are settled before the
+   * first block and repeat unchanged, so taking the whole last object rather
+   * than merging field by field loses nothing.
+   *
+   * Requires a pass of its own because the last event of a message is only
+   * knowable after the walk has passed it.
+   */
+  private findFinalUsage(events: RawEvent[]): Map<string, any> {
+    const final = new Map<string, any>();
+
+    for (const event of events) {
+      if (event.type !== 'assistant' || !event.message?.usage) {
+        continue;
+      }
+      const id = event.message.id ?? '';
+      if (id === '') {
+        continue;
+      }
+      final.set(id, event.message.usage);
+    }
+
+    return final;
   }
 
   /**

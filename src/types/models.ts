@@ -116,7 +116,25 @@ export type StepType =
   // An event that carries a blob and nothing the timeline renders — a queued
   // paste, an unrecognised message shape. The step exists to keep the
   // attachment reachable.
-  | 'attachment';
+  | 'attachment'
+  // Something the harness did rather than the model: a hook that blocked a
+  // call, a request that had to be retried, and — as they get parsed — model
+  // fallbacks and the rest. See `SystemStepKind`.
+  | 'system';
+
+/**
+ * Which harness event a `system` step stands for. Each kind is hidden until the
+ * user turns it on from its own button in the session header, so a timeline
+ * stays a record of what the model did unless asked otherwise. Adding a kind
+ * means a branch in the parser and an entry in the webview's registry
+ * (`webview/src/components/systemSteps.tsx`) — nothing else.
+ */
+export type SystemStepKind =
+  | 'hook_blocking_error'
+  | 'hook_non_blocking_error'
+  | 'api_error'
+  | 'local_command'
+  | 'stop_hook_summary';
 
 /**
  * A binary blob a transcript carries inline — a pasted screenshot, an image a
@@ -142,6 +160,30 @@ export interface Attachment {
   name: string;
 }
 
+/**
+ * Who let a tool call run, or stopped it — set on a `tool_call` step only when
+ * the transcript actually says. It is silent far more often than not: a call
+ * that simply went ahead carries nothing, because a person clicking "allow", an
+ * allow-rule in settings and the auto-mode classifier are indistinguishable
+ * once the call has run. Only two things are on the record — a refusal
+ * (`toolDenialKind`, which names its source) and a `PreToolUse` hook that
+ * decided out loud.
+ */
+export interface StepPermission {
+  outcome: 'allowed' | 'denied';
+  /**
+   * `unknown` is for pre-2.1.198 transcripts, which recorded that a call was
+   * refused but not by what.
+   */
+  decidedBy: 'user' | 'rule' | 'automode' | 'hook' | 'unknown';
+  /** One line for the UI — "Denied by user", "Allowed by hook". */
+  label: string;
+  /** What the decider said: a hook's reason, or the one a person typed. */
+  reason?: string;
+  /** `PreToolUse:Bash`, when a hook decided. */
+  hookName?: string;
+}
+
 export interface Step {
   index: number;
   type: StepType;
@@ -156,6 +198,25 @@ export interface Step {
   toolResult?: string;
   toolSuccess?: boolean;
   toolUseId?: string;
+  /** Who allowed or refused this call, when the transcript says — see `StepPermission`. */
+  permission?: StepPermission;
+  /** Set on `system` steps only — which harness event this one stands for. */
+  systemKind?: SystemStepKind;
+  /**
+   * Set on `system` steps only — whether this one records something going
+   * wrong. A hook running is not an event: the timeline paints an `error` red
+   * and leaves a `notice` in the neutral grey it deserves, so a red row in a
+   * session means a red row worth reading. Not a property of the kind — the
+   * stop hooks are a `notice` on most turns and an `error` on the turn one of
+   * them fell over.
+   */
+  systemSeverity?: 'error' | 'notice';
+  /**
+   * Where a `system` step came from, shown ahead of its text in the row: the
+   * hook's name for a blocked call (`PostToolUse:Bash`), and whatever names the
+   * source for the kinds added later.
+   */
+  systemSource?: string;
   usage?: Usage;
   // Cost of the API response this step came from, charged once per message:
   // the first step of a message carries it, its siblings carry 0. Summing
@@ -169,7 +230,16 @@ export interface Step {
   globalIndex?: number;
 }
 
-export interface Usage extends CostUsage {}
+export interface Usage extends CostUsage {
+  // How many of the billed output tokens the model spent on internal
+  // reasoning. A breakdown of `output_tokens`, never an addition to it —
+  // always <= output_tokens — so it stays out of `CostUsage` and out of every
+  // cost calculation. Absent on transcripts written before the field existed,
+  // and on messages that did no thinking.
+  output_tokens_details?: {
+    thinking_tokens?: number;
+  };
+}
 
 export interface SubagentInfo {
   agentId: string;
@@ -210,6 +280,17 @@ export interface SubagentInfo {
    * completion comes from the run's state file, not a task-notification.
    */
   workflowRunId?: string;
+}
+
+/**
+ * A step that records a harness event rather than an action the model took.
+ * Everything that measures the session — the analysis rules, cost, context and
+ * performance — works on the list without them: they are billed to nobody, and
+ * a synthetic row sitting between two real ones would split the gap that gives
+ * a step its duration.
+ */
+export function isSystemStep(step: Step): boolean {
+  return step.type === 'system';
 }
 
 /**

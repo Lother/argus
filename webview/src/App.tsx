@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { SessionDetail, flattenSessionSteps } from './types/session';
+import { SessionDetail, flattenSessionSteps, isSystemStep } from './types/session';
+import { SYSTEM_STEP_TOGGLES, systemToggleOf } from './components/systemSteps';
 import { formatModelLabel } from '../../src/types/modelFamily';
 import StepsTab from './components/StepsTab';
 import AnalysisTab from './components/AnalysisTab';
@@ -32,6 +33,13 @@ function App() {
   const [tabsCollapsed, setTabsCollapsed] = useState(false);
   const [searchCollapsed, setSearchCollapsed] = useState(false);
   const [idCopied, setIdCopied] = useState(false);
+  // Which header buttons are pressed — one entry per button, not per kind, so a
+  // button that covers two kinds brings both in at once (see `toggleWith` in
+  // `systemSteps`). Deliberately local and deliberately not persisted: reading
+  // hook errors is something you do while chasing one thing down, not a way to
+  // read sessions, so closing the panel puts the timeline back to what the
+  // model did.
+  const [visibleSystemToggles, setVisibleSystemToggles] = useState<Set<string>>(new Set());
   // Steps left after the Steps tab's own search/filters; null when that tab is
   // closed, in which case the header shows the plain total.
   const [stepsFilteredCount, setStepsFilteredCount] = useState<number | null>(null);
@@ -75,16 +83,70 @@ function App() {
 
   // Hooks must run unconditionally on every render (Rules of Hooks). Compute
   // the flattened timeline before any early returns.
+  //
+  // Numbering happens here, over everything the transcript produced, so a
+  // step's `globalIndex` is the same whether or not the system steps around it
+  // are on screen — the tabs navigate by that number, and it must not move
+  // under a highlight because a button was pressed.
   const flatSteps = useMemo(
     () => (session ? flattenSessionSteps(session) : []),
     [session]
   );
 
+  // How many steps each button would bring in — summed over the kinds it
+  // covers, so its count is what pressing it actually adds to the timeline.
+  const systemStepCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const step of flatSteps) {
+      if (!isSystemStep(step)) continue;
+      const toggle = systemToggleOf(step.systemKind);
+      counts.set(toggle, (counts.get(toggle) ?? 0) + 1);
+    }
+    return counts;
+  }, [flatSteps]);
+
+  // What the Steps tab renders. Also what the header counts, so the number by
+  // the tab name always matches the rows underneath it.
+  const timelineSteps = useMemo(
+    () =>
+      flatSteps.filter(
+        step => !isSystemStep(step) || visibleSystemToggles.has(systemToggleOf(step.systemKind))
+      ),
+    [flatSteps, visibleSystemToggles]
+  );
+
+  // Every other tab measures the session — cost, context, durations, file
+  // dependencies — and a harness event is none of those things. They see the
+  // timeline without them, whatever the buttons say. `session.steps` is the
+  // main session alone (no sub-agents), which is what those tabs expect.
+  const analyticSteps = useMemo(() => flatSteps.filter(step => !isSystemStep(step)), [flatSteps]);
+  const mainSteps = useMemo(
+    () => (session ? session.steps.filter(step => !isSystemStep(step)) : []),
+    [session]
+  );
+
+  // The main session as it sits in the flattened timeline: the same steps as
+  // `mainSteps`, but carrying `globalIndex` and still accompanied by the
+  // harness events. The Performance tab measures gaps over these — a retry
+  // storm has to be able to end a pause it sits in, and a step it links to has
+  // to be numbered the way the Steps tab numbers it. Sub-agent steps stay out,
+  // so a Task keeps the duration of the whole agent it spawned.
+  const mainFlatSteps = useMemo(() => flatSteps.filter(step => !step.agentId), [flatSteps]);
+
+  // The same steps as `mainSteps` — so the token maths on the Context tab is
+  // unchanged — but numbered the way the Steps tab numbers them. Its charts
+  // navigate on click, and `session.steps` carries no `globalIndex` to
+  // navigate by.
+  const mainAnalyticSteps = useMemo(
+    () => mainFlatSteps.filter(step => !isSystemStep(step)),
+    [mainFlatSteps]
+  );
+
   // "Steps (55)" normally, "Steps (13/55)" while a search or filter narrows it.
   const stepsTabLabel =
-    stepsFilteredCount !== null && stepsFilteredCount !== flatSteps.length
-      ? `${stepsFilteredCount}/${flatSteps.length}`
-      : `${flatSteps.length}`;
+    stepsFilteredCount !== null && stepsFilteredCount !== timelineSteps.length
+      ? `${stepsFilteredCount}/${timelineSteps.length}`
+      : `${timelineSteps.length}`;
 
   if (loading) {
     return (
@@ -169,6 +231,25 @@ function App() {
     window.vscodeApi?.postMessage({ type: 'setSearchCollapsed', collapsed });
   };
 
+  // A tab filtered itself and needs the bar back — a query nobody can see is a
+  // list that has silently lost rows. Treated as the user having opened it, so
+  // it stays open the same way the toggle would.
+  const revealSearch = () => {
+    if (!searchCollapsed) return;
+    setSearchCollapsed(false);
+    window.vscodeApi?.postMessage({ type: 'setSearchCollapsed', collapsed: false });
+  };
+
+  // Nothing is sent to the host here: these live and die with the panel.
+  const toggleSystemKind = (toggle: string) => {
+    setVisibleSystemToggles(prev => {
+      const next = new Set(prev);
+      if (next.has(toggle)) next.delete(toggle);
+      else next.add(toggle);
+      return next;
+    });
+  };
+
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
@@ -187,7 +268,7 @@ function App() {
           <span className="meta-badge">{formatModel(session.model)}</span>
           <span>{formatDuration(session.durationMs)}</span>
           <span className="meta-dim">
-            {t('app.stepCount', { count: flatSteps.length })}
+{t('app.stepCount', { count: timelineSteps.length })}
             {session.subagents.length > 0 &&
               ` · ${t('app.agentCount', { count: session.subagents.length })}`}
           </span>
@@ -247,6 +328,39 @@ function App() {
                 />
               </svg>
             </button>
+
+            {/* Past the divider the buttons no longer fold anything away —
+                each one brings a kind of harness event into the timeline, lit
+                while its steps are on screen and carrying how many there are.
+                Straight off the registry, minus the kinds that ride on another
+                button rather than carrying one of their own. */}
+            <span className="view-toggle-divider" />
+            {SYSTEM_STEP_TOGGLES.map(info => {
+              // A button that covers several kinds is worded for the group, not
+              // for whichever kind happens to own it.
+              const button = info.button ?? info;
+              const count = systemStepCounts.get(info.kind) ?? 0;
+              const shown = visibleSystemToggles.has(info.kind);
+              const action = shown ? 'Hide' : 'Show';
+              return (
+                <button
+                  key={info.kind}
+                  className={`view-toggle-btn system-toggle-btn${shown ? ' active' : ''}`}
+                  onClick={() => toggleSystemKind(info.kind)}
+                  disabled={count === 0}
+                  title={
+                    count === 0
+                      ? `No ${button.plural} in this session`
+                      : `${action} ${button.plural} (${count}) — ${button.hint}`
+                  }
+                  aria-label={`${action} ${button.plural}`}
+                  aria-pressed={shown}
+                >
+                  <button.Icon size={12} />
+                  <span className="view-toggle-count">{count}</span>
+                </button>
+              );
+            })}
           </span>
 
           {/* Last in the row, pushed to the far edge — deleting a session is
@@ -325,7 +439,8 @@ function App() {
       <div className="tab-content">
         {activeTab === 'steps' && (
           <StepsTab
-            steps={flatSteps}
+            steps={timelineSteps}
+            allSteps={flatSteps}
             subagents={session.subagents}
             findings={session.analysis?.findings || []}
             highlightStep={highlightStep}
@@ -333,22 +448,23 @@ function App() {
             autoExpand={stepsAutoExpand}
             hideControls={searchCollapsed}
             onFilteredCountChange={setStepsFilteredCount}
-            onMarkAgentFinished={markAgentFinished}
+onMarkAgentFinished={markAgentFinished}
+            onRevealControls={revealSearch}
           />
         )}
         {activeTab === 'analysis' && (
           <AnalysisTab
             analysis={session.analysis}
-            steps={session.steps}
+            steps={mainSteps}
             subagents={session.subagents}
-            flatSteps={flatSteps}
+            flatSteps={analyticSteps}
             sessionTotalCost={session.totalCost}
             onGoToStep={goToStep}
           />
         )}
         {activeTab === 'cost' && (
           <CostTab
-            steps={flatSteps}
+steps={mainSteps}
             analysis={session.analysis}
             subagents={session.subagents}
             sessionTotalCost={session.totalCost}
@@ -357,13 +473,13 @@ function App() {
         )}
         {activeTab === 'flow' && (
           <FlowTab
-            steps={flatSteps}
+            steps={analyticSteps}
             onGoToStep={goToStep}
           />
         )}
         {activeTab === 'map' && (
           <MapTab
-            steps={flatSteps}
+            steps={analyticSteps}
             cwd={mapCwd || session.project}
             topLevelEntries={mapEntries}
             onGoToStep={goToStep}
@@ -371,20 +487,21 @@ function App() {
         )}
         {activeTab === 'context' && (
           <ContextTab
-            steps={session.steps}
+            steps={mainAnalyticSteps}
             analysis={session.analysis}
             onGoToStep={goToStep}
           />
         )}
         {activeTab === 'performance' && (
           <PerformanceTab
-            steps={session.steps}
+            steps={mainFlatSteps}
             onGoToStep={goToStep}
           />
         )}
         {activeTab === 'insights' && (
           <InsightsTab
-            steps={session.steps}
+            steps={mainSteps}
+            flatSteps={analyticSteps}
             analysis={session.analysis}
             filesRead={session.filesRead}
             filesWritten={session.filesWritten}
