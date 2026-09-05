@@ -1,6 +1,8 @@
-import { Step, AnalysisResult } from '../types/session';
+import { Step, AnalysisResult, stepKey } from '../types/session';
+import { oncePerResponse } from '../../../src/types/usage';
 import ContextTimeline from './ContextTimeline';
 import { t, locale } from '../i18n';
+import RequestWeight from './RequestWeight';
 import './ContextTab.css';
 
 interface Props {
@@ -10,17 +12,24 @@ interface Props {
 }
 
 const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
-  // Calculate token metrics
-  const totalInputTokens = steps.reduce((sum, s) =>
+  // Token metrics, counted once per API response: `usage` is repeated on every
+  // step a response produced, so reducing over `steps` inflates every total.
+  const responses = oncePerResponse(steps);
+
+  const totalInputTokens = responses.reduce((sum, s) =>
     sum + (s.usage?.input_tokens || 0) + (s.usage?.cache_creation_input_tokens || 0), 0);
-  const totalOutputTokens = steps.reduce((sum, s) =>
+  const totalOutputTokens = responses.reduce((sum, s) =>
     sum + (s.usage?.output_tokens || 0), 0);
-  const totalCacheRead = steps.reduce((sum, s) =>
+  const totalCacheRead = responses.reduce((sum, s) =>
     sum + (s.usage?.cache_read_input_tokens || 0), 0);
-  const totalCacheCreate = steps.reduce((sum, s) =>
+  const totalCacheCreate = responses.reduce((sum, s) =>
     sum + (s.usage?.cache_creation_input_tokens || 0), 0);
 
-  const avgInputPerStep = Math.round(totalInputTokens / steps.length);
+  // Per response, matching the totals above. Dividing by `steps.length` would
+  // spread a per-response sum over steps that never carried usage.
+  const avgInputPerResponse = responses.length > 0
+    ? Math.round(totalInputTokens / responses.length)
+    : 0;
   const cacheEfficiency = totalCacheRead > 0
     ? ((totalCacheRead / (totalInputTokens + totalCacheRead)) * 100).toFixed(1)
     : '0.0';
@@ -41,7 +50,7 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
           <div className="metric-label">{t('context.totalInput')}</div>
           <div className="metric-value">{totalInputTokens.toLocaleString(locale)}</div>
           <div className="metric-sub">
-            {t('context.avgPerStep', { count: avgInputPerStep.toLocaleString(locale) })}
+            {t('context.avgPerResponse', { count: avgInputPerResponse.toLocaleString(locale) })}
           </div>
         </div>
         <div className="metric-card">
@@ -65,6 +74,12 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
         steps={steps}
         compactionPoints={analysis?.contextMetrics?.compactionPoints}
         pressureZones={analysis?.contextMetrics?.contextPressureZones}
+        onGoToStep={onGoToStep}
+      />
+
+      <RequestWeight
+        steps={steps}
+        compactionPoints={analysis?.contextMetrics?.compactionPoints}
         onGoToStep={onGoToStep}
       />
 
@@ -112,7 +127,7 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
         <div className="peak-info">
           <div className="peak-stat">
             <span>{t('context.highestStep')}</span>
-            <code>#{peakStep?.index}</code>
+            <code>#{peakStep ? stepKey(peakStep) : ''}</code>
           </div>
           <div className="peak-stat">
             <span>{t('context.totalTokens')}</span>

@@ -1,6 +1,7 @@
 import { Step, AnalysisResult, Subagent } from '../types/session';
 import { calculateCostBreakdown } from '../../../src/types/pricing';
 import { t } from '../i18n';
+import { oncePerResponse } from '../../../src/types/usage';
 import { Pie, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -91,13 +92,7 @@ const CostTab = ({ steps, analysis, subagents, sessionTotalCost, onGoToStep }: P
   // Token cost breakdown. Usage repeats across every step of one response, so
   // each message is counted once — the same rule the parser applies to cost.
   let inputCost = 0, outputCost = 0, cacheReadCost = 0, cacheCreateCost = 0;
-  const countedMessages = new Set<string>();
-  steps.forEach(step => {
-    if (!step.usage) return;
-    const key = step.messageId || `step-${step.globalIndex ?? step.index}`;
-    if (countedMessages.has(key)) return;
-    countedMessages.add(key);
-
+  oncePerResponse(steps).forEach(step => {
     const b = calculateCostBreakdown(step.usage, step.model ?? '');
     inputCost += b.input;
     outputCost += b.output;

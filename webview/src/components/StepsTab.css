@@ -368,6 +368,9 @@
 .step-icon-compact { color: #C8956A; }
 .step-icon-user    { color: #7EA6D9; }
 .step-icon-attachment { color: #9BB0C4; }
+.step-icon-ask     { color: #D9B36C; }
+.step-icon-system  { color: var(--status-error); }
+.step-icon-system-notice { color: var(--text-dim); }
 .step-icon-default { color: var(--text-dim); }
 
 .step-index {
@@ -469,6 +472,42 @@
   color: var(--text);
 }
 
+/* Harness event — a hook that blocked a call, and the kinds added later. Red
+   like a failure because that is what it was, dashed like the compaction
+   divider because nobody was billed for it and no rule counts it. */
+.step-item-system {
+  background: color-mix(in srgb, var(--status-error) 5%, transparent);
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--status-error) 55%, transparent);
+  border-style: dashed;
+}
+
+.step-item-system:hover {
+  background: color-mix(in srgb, var(--status-error) 9%, transparent);
+}
+
+.step-item-system .step-type {
+  color: var(--status-error);
+  opacity: 0.85;
+}
+
+/* The same event without the failure: hooks that ran and finished, a slash
+   command the CLI answered. It still gets the dashed frame — nothing here was
+   billed either — but not the colour, so red in a timeline keeps meaning that
+   something went wrong rather than that a hook exists. */
+.step-item-system-notice {
+  background: color-mix(in srgb, var(--text-dim) 5%, transparent);
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--text-dim) 45%, transparent);
+}
+
+.step-item-system-notice:hover {
+  background: color-mix(in srgb, var(--text-dim) 9%, transparent);
+}
+
+.step-item-system-notice .step-type {
+  color: var(--text-dim);
+  opacity: 1;
+}
+
 .step-right {
   display: flex;
   align-items: center;
@@ -493,6 +532,55 @@
   font-size: 12px;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+/* Both sides of one response: the row that holds the charge (with the number
+   of blocks it covers) and the rows that point back at it. Same shape on
+   purpose — they are two views of the same link, and either opens the group. */
+.step-cost-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.step-cost-ref:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+/* The row the charge is actually booked on: reads at the same weight as a
+   plain price, only its "↗ ×N" tail is quieter. Fading it like the pointing
+   rows would hide the one number in the group that is real. */
+.step-cost-charged {
+  opacity: 1;
+}
+
+.step-cost-charged .step-cost-ref-target {
+  opacity: 0.6;
+}
+
+/* Nothing is struck through on the pointing rows: the money was spent, it is
+   just not booked there — the stacked plates say "one response, several
+   blocks", and the number says which step holds the charge. */
+.step-cost-ref-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.step-cost-group-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .step-expand {
@@ -645,6 +733,17 @@
 .step-usage-value {
   color: var(--text);
   opacity: 0.85;
+}
+
+/* A breakdown of the count before it rather than a peer of it: pulled tight
+   against `out` and dimmed so the row still reads as four buckets. */
+.step-usage-item-sub {
+  margin-left: -6px;
+  opacity: 0.7;
+}
+
+.step-usage-item-sub .step-usage-label::before {
+  content: '· ';
 }
 
 /* Fallback host when the step has no renderer to hang the counts on. */
@@ -855,6 +954,19 @@
   border-radius: 3px;
   color: var(--status-warning, #d4a72c);
   background: rgba(212, 167, 44, 0.12);
+}
+
+/* Only rendered when the agent ran on a different model than the session, so
+   it should read as a deviation — outlined, not filled like the type badge. */
+.step-agent-model {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border-radius: 3px;
+  border: 1px solid var(--status-info, #3794ff);
+  color: var(--status-info, #3794ff);
 }
 
 .step-agent-id {

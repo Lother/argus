@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Step } from '../types/session';
+import { Step, stepKey } from '../types/session';
 import { t } from '../i18n';
+import { oncePerResponse } from '../../../src/types/usage';
+import { useChartStepClick } from '../utils/chartStepClick';
 
 interface Props {
   steps: Step[];
@@ -10,6 +12,26 @@ interface Props {
   onGoToStep?: (index: number) => void;
 }
 
+type SeriesKey = 'cumInput' | 'cumOutput' | 'cumCache';
+
+interface Point {
+  /** `globalIndex`: what the Steps tab shows and navigates by. */
+  index: number;
+  /** Index within the main session: what the analyzer's findings refer to. */
+  localIndex: number;
+  step: string;
+  cumInput: number;
+  cumOutput: number;
+  cumCache: number;
+  isPressure?: boolean;
+}
+
+const SERIES: { key: SeriesKey; labelKey: string; color: string }[] = [
+  { key: 'cumInput', labelKey: 'contextTimeline.seriesInput', color: '#06b6d4' },
+  { key: 'cumOutput', labelKey: 'contextTimeline.seriesOutput', color: '#8b5cf6' },
+  { key: 'cumCache', labelKey: 'contextTimeline.seriesCache', color: '#5eead4' }
+];
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
@@ -17,19 +39,42 @@ function formatTokens(n: number): string {
 }
 
 export default function ContextTimeline({ steps, compactionPoints, pressureZones, onGoToStep }: Props) {
-  const data = useMemo(() => {
-    const entries: { index: number; step: string; cumInput: number; cumOutput: number; cumCache: number; isPressure?: boolean }[] = [];
+  // Hidden series are left unrendered rather than given `hide`, so recharts
+  // drops them from the axis domain and whatever is left rescales to fill the
+  // chart — cache dwarfs the other two and flattens them otherwise.
+  const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set());
+
+  const toggle = (key: SeriesKey) => {
+    setHidden(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const data = useMemo<Point[]>(() => {
+    const entries: Point[] = [];
     let cumInput = 0, cumOutput = 0, cumCache = 0;
     const pressureSet = new Set(pressureZones ?? []);
 
-    for (const step of steps) {
+    // One point per API response: plotting every step would step the curve up
+    // once per content block and end the session at an inflated total.
+    for (const step of oncePerResponse(steps)) {
       if (!step.usage) continue;
       cumInput += (step.usage.input_tokens ?? 0) + (step.usage.cache_creation_input_tokens ?? 0);
       cumOutput += step.usage.output_tokens ?? 0;
       cumCache += step.usage.cache_read_input_tokens ?? 0;
+      // Numbered the way the Steps tab numbers rows, which is what
+      // `onGoToStep` highlights by.
+      const key = stepKey(step);
       entries.push({
-        index: step.index,
-        step: `#${step.index}`,
+        index: key,
+        localIndex: step.index,
+        step: `#${key}`,
         cumInput,
         cumOutput,
         cumCache,
@@ -39,6 +84,9 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
     return entries;
   }, [steps, pressureZones]);
 
+  // Before the early return: hooks must run on every render.
+  const { chartHandlers, wrapperHandlers } = useChartStepClick(data, onGoToStep);
+
   if (data.length < 2) {
     return (
       <div className="context-timeline-empty">{t('contextTimeline.notEnoughData')}</div>
@@ -46,13 +94,15 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
   }
 
   const compactionSet = new Set(compactionPoints ?? []);
+  const visible = SERIES.filter(s => !hidden.has(s.key));
 
   return (
     <div className="context-timeline-container">
       <h3 className="section-title">{t('contextTimeline.title')}</h3>
-      <div className="context-timeline-chart">
+      <div className="section-subtitle">{t('contextTimeline.subtitle')}</div>
+      <div className="context-timeline-chart is-clickable" {...wrapperHandlers}>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }}>
+          <LineChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }} {...chartHandlers}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="step"
@@ -60,6 +110,7 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
               style={{ fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}
             />
             <YAxis
+              hide={visible.length === 0}
               tickFormatter={formatTokens}
               stroke="rgba(255,255,255,0.4)"
               style={{ fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}
@@ -72,12 +123,14 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
                 fontSize: '12px'
               }}
               labelStyle={{ color: 'var(--text-bright)', fontWeight: 600 }}
-              formatter={(value: number | undefined) => [formatTokens(value ?? 0), '']}
+              formatter={(value) => [formatTokens(typeof value === 'number' ? value : 0), '']}
             />
 
             {/* Compaction lines */}
+            {/* Matched on the local index: the analyzer numbers findings within
+                the main session, not by `globalIndex`. */}
             {data.map((d) =>
-              compactionSet.has(d.index) ? (
+              compactionSet.has(d.localIndex) ? (
                 <ReferenceLine
                   key={`comp-${d.index}`}
                   x={d.step}
@@ -89,45 +142,41 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
               ) : null
             )}
 
-            <Line
-              type="monotone"
-              dataKey="cumInput"
-              stroke="#06b6d4"
-              strokeWidth={2.5}
-              dot={{ fill: '#06b6d4', r: 4 }}
-              activeDot={{ r: 6, onClick: (_e, payload: any) => onGoToStep?.(payload.payload.index) }}
-              name={t('contextTimeline.seriesInput')}
-            />
-            <Line
-              type="monotone"
-              dataKey="cumOutput"
-              stroke="#8b5cf6"
-              strokeWidth={2.5}
-              dot={{ fill: '#8b5cf6', r: 4 }}
-              activeDot={{ r: 6 }}
-              name={t('contextTimeline.seriesOutput')}
-            />
-            <Line
-              type="monotone"
-              dataKey="cumCache"
-              stroke="#5eead4"
-              strokeWidth={2.5}
-              dot={{ fill: '#5eead4', r: 4 }}
-              activeDot={{ r: 6 }}
-              name={t('contextTimeline.seriesCache')}
-            />
+{visible.map(s => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                stroke={s.color}
+                strokeWidth={2.5}
+                dot={{ fill: s.color, r: 4 }}
+                activeDot={{ r: 6 }}
+                name={t(s.labelKey)}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
 
       <div className="token-legend">
-        <span className="token-legend-item"><span className="token-dot" style={{ background: '#06b6d4' }} />{t('contextTimeline.seriesInput')}</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: '#8b5cf6' }} />{t('contextTimeline.seriesOutput')}</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: '#5eead4' }} />{t('contextTimeline.seriesCache')}</span>
+{SERIES.map(s => (
+          <button
+            key={s.key}
+            type="button"
+            className={`token-legend-item token-legend-toggle${hidden.has(s.key) ? ' is-hidden' : ''}`}
+            onClick={() => toggle(s.key)}
+            aria-pressed={!hidden.has(s.key)}
+            title={t(hidden.has(s.key) ? 'contextTimeline.showSeries' : 'contextTimeline.hideSeries', { name: t(s.labelKey) })}
+          >
+            <span className="token-dot" style={{ background: s.color }} />
+            {t(s.labelKey)}
+          </button>
+        ))}
         {(compactionPoints?.length ?? 0) > 0 && (
           <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />{t('contextTimeline.legendCompactions')}</span>
         )}
       </div>
+      <div className="token-legend-note">{t('contextTimeline.note')}</div>
     </div>
   );
 }

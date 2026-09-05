@@ -36,6 +36,22 @@ export interface Attachment {
   name: string;
 }
 
+/**
+ * Who allowed or refused a tool call. Set only where the transcript says so —
+ * a refusal (which names its source since CLI 2.1.198) or a `PreToolUse` hook
+ * that decided out loud. A call that simply ran carries nothing: a person
+ * clicking "allow", an allow-rule and the auto-mode classifier all look the
+ * same afterwards, so the UI says nothing rather than guessing.
+ */
+export interface StepPermission {
+  outcome: 'allowed' | 'denied';
+  /** `unknown` — an older transcript that recorded the refusal but not its source. */
+  decidedBy: 'user' | 'rule' | 'automode' | 'hook' | 'unknown';
+  label: string;
+  reason?: string;
+  hookName?: string;
+}
+
 export interface Step {
   index: number;
   type: string;
@@ -47,6 +63,17 @@ export interface Step {
   toolResult?: string;
   toolSuccess?: boolean;
   toolUseId?: string;
+  // Who let this call run, or stopped it. Absent on most calls: only a refusal
+  // and a `PreToolUse` hook's verdict are on the record — see `StepPermission`.
+  permission?: StepPermission;
+  // Set on steps of type `system` — which harness event the step stands for,
+  // and where it came from (a hook's name, …). See `components/systemSteps`.
+  systemKind?: string;
+  systemSource?: string;
+  // Set on steps of type `system` — whether the event was something going
+  // wrong (`error`, painted red) or merely something that happened
+  // (`notice`, painted neutral). Absent on kinds parsed before it existed.
+  systemSeverity?: 'error' | 'notice';
   content?: string;
   timestamp?: string;
   // Charged once per API response: the first step of a message carries the
@@ -68,6 +95,11 @@ export interface TokenUsage {
   cache_creation?: {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
+  };
+  // Part of `output_tokens`, not extra on top of it: the reasoning tokens are
+  // already billed in the output count. Missing on older transcripts.
+  output_tokens_details?: {
+    thinking_tokens?: number;
   };
   speed?: string;
 }
@@ -96,6 +128,16 @@ export interface Subagent {
   analysis?: AnalysisResult;
   // False while the agent is still running (see host SubagentInfo.finished).
   finished?: boolean;
+}
+
+/**
+ * A step that records something the harness did — a hook that blocked a call,
+ * and the other kinds as they get parsed — rather than an action the model
+ * took. They are hidden until their button in the session header is pressed,
+ * and every tab that measures the session leaves them out.
+ */
+export function isSystemStep(step: Step): boolean {
+  return step.type === 'system';
 }
 
 /**
@@ -178,6 +220,14 @@ export interface ContextMetrics {
   compactionPoints: number[];
 }
 
+/**
+ * The number a step is shown and navigated by across tabs: its `globalIndex`,
+ * falling back to the local index for steps that never went through
+ * `flattenSessionSteps`. Anything that renders "#N" or calls `onGoToStep` has
+ * to agree on this, or the highlight lands on the wrong row.
+ */
+export const stepKey = (step: Step): number => step.globalIndex ?? step.index;
+
 export interface Finding {
   rule?: string;
   severity: 'error' | 'warning' | 'info';
@@ -185,9 +235,9 @@ export interface Finding {
   description: string;
   wastedCost?: number;
   toolName?: string;
-  // The analyzer emits `steps`; older/derived shapes use `affectedSteps`.
+  // Local step indices within the session the finding was analyzed against —
+  // resolve them to `globalIndex` before navigating.
   steps?: number[];
-  affectedSteps?: number[];
 }
 
 export type ViewMode = 'overview' | 'steps' | 'findings' | 'files' | 'subagents' | 'cost' | 'context';

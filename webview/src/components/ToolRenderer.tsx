@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import hljs from 'highlight.js';
 import { diffLines } from 'diff';
 import { Attachment, Step } from '../types/session';
+import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import Attachments, { useAttachmentBytes } from './Attachments';
 import { t, locale } from '../i18n';
+import { parseAskUserQuestion } from './askUserQuestion';
+import { ResultBlocksRenderer, ToolSearchRenderer, asResultBlocks } from './resultBlocks';
 import 'highlight.js/styles/github-dark.css';
 import './ToolRenderer.css';
 
@@ -310,6 +313,18 @@ const MultiEditRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
+/**
+ * A command's output as the terminal drew it. Anything a tool ran with colours
+ * on — `ls --color`, a test runner, a build — keeps them here; text without
+ * colour codes renders exactly as it did before, as a plain child node.
+ */
+const TerminalText = ({ text }: { text: string }) =>
+  hasAnsi(text) ? (
+    <code dangerouslySetInnerHTML={{ __html: ansiToHtml(text) }} />
+  ) : (
+    <code>{text}</code>
+  );
+
 const BashRenderer = ({ input, result }: { input: any; result: any }) => {
   const cmd: string = input?.command || '';
   let stdout = '';
@@ -351,12 +366,12 @@ const BashRenderer = ({ input, result }: { input: any; result: any }) => {
       </div>
       {stdout && (
         <pre className="tr-bash-stdout">
-          <code>{stdout}</code>
+          <TerminalText text={stdout} />
         </pre>
       )}
       {stderr && (
         <pre className="tr-bash-stderr">
-          <code>{stderr}</code>
+          <TerminalText text={stderr} />
         </pre>
       )}
     </div>
@@ -433,6 +448,9 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
 
   const prompt: string = asStr(inputObj.prompt);
   const subagentType: string = asStr(inputObj.subagent_type);
+  // The model alias the call asked for (`opus`, `haiku`). Absent means the
+  // agent inherited whatever the session runs on.
+  const requestedModel: string = asStr(inputObj.model);
   const agentId: string = asStr(resultObj.agentId);
   const status: string = asStr(resultObj.status);
   const totalDurationMs = asNum(resultObj.totalDurationMs);
@@ -445,9 +463,14 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
     <div className="tr-block">
       {/* The description is the step header's subtitle now; the agent type is
           the one thing here the header doesn't carry. */}
-      {subagentType && (
+      {(subagentType || requestedModel) && (
         <div className="tr-task-header">
-          <span className="tr-task-type">{subagentType}</span>
+          {subagentType && <span className="tr-task-type">{subagentType}</span>}
+          {requestedModel && (
+            <span className="tr-badge tr-badge-info" title={t('toolRenderer.modelRequestedTitle')}>
+              {t('toolRenderer.modelRequestedLabel', { model: requestedModel })}
+            </span>
+          )}
         </div>
       )}
       {(agentId || status) && (
@@ -546,6 +569,79 @@ const WebSearchRenderer = ({ input, result }: { input: any; result: any }) => {
         <code className="tr-grep-pattern">{query}</code>
       </div>
       <pre className="tr-text">{content}</pre>
+    </div>
+  );
+};
+
+const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any }) => {
+  const call = useMemo(() => parseAskUserQuestion(input, result), [input, result]);
+
+  if (call.questions.length === 0) {
+    return <div className="tr-empty">{t('toolRenderer.askNoQuestions')}</div>;
+  }
+
+  return (
+    <div className="tr-block">
+      {call.questions.map((q, i) => {
+        const answer = call.answers[i];
+        const picked = new Set(answer.picked);
+        // A single-select shows what was taken and what was passed over; a
+        // multi-select is a checklist, so unticked options are part of the
+        // answer too. Same glyph pair either way, filled vs. empty.
+        const [on, off] = q.multiSelect ? ['☑', '☐'] : ['●', '○'];
+        return (
+          <div className="tr-ask-question" key={i}>
+            <div className="tr-ask-head">
+              {q.header && <span className="tr-ask-header">{q.header}</span>}
+              {q.multiSelect && <span className="tr-badge tr-badge-info">{t('toolRenderer.askMulti')}</span>}
+              {!answer.answered && (
+                <span className="tr-badge tr-badge-warn">{t('toolRenderer.askUnanswered')}</span>
+              )}
+              <span className="tr-ask-text">{q.question}</span>
+            </div>
+            <ul className="tr-ask-options">
+              {q.options.map((o, j) => {
+                const chosen = picked.has(o.label);
+                return (
+                  <li key={j} className={`tr-ask-option${chosen ? ' tr-ask-option-chosen' : ''}`}>
+                    <span className="tr-ask-mark" aria-hidden>{chosen ? on : off}</span>
+                    <div className="tr-ask-option-body">
+                      <div className="tr-ask-label">{o.label}</div>
+                      {o.description && <div className="tr-ask-desc">{o.description}</div>}
+                      {/* Previews are mockups several lines tall. The chosen
+                          one is the reason the answer reads the way it does, so
+                          it opens; the rest stay one line until asked for. */}
+                      {o.preview && (
+                        <details className="tr-ask-preview" open={chosen}>
+                          <summary>{t('toolRenderer.askPreview')}</summary>
+                          <pre>{o.preview}</pre>
+                        </details>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+              {/* What the user typed under "Other" — never one of the offered
+                  options, and on a multi-select it can sit alongside them. */}
+              {answer.custom && (
+                <li className="tr-ask-option tr-ask-option-chosen tr-ask-option-custom">
+                  <span className="tr-ask-mark" aria-hidden>✎</span>
+                  <div className="tr-ask-option-body">
+                    <div className="tr-ask-label">{t('toolRenderer.askOwnAnswer')}</div>
+                    <pre className="tr-ask-custom">{answer.custom}</pre>
+                  </div>
+                </li>
+              )}
+            </ul>
+            {answer.note && (
+              <div className="tr-ask-note">
+                <span className="tr-ask-note-label">{t('toolRenderer.askNote')}</span>
+                <pre className="tr-ask-custom">{answer.note}</pre>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -651,6 +747,8 @@ const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Elem
   TodoWrite: TodoWriteRenderer,
   WebFetch: WebFetchRenderer,
   WebSearch: WebSearchRenderer,
+  AskUserQuestion: AskUserQuestionRenderer,
+  ToolSearch: ToolSearchRenderer,
 };
 
 // pretty = per-tool renderer, raw = JSON dump with horizontal scroll,
@@ -665,9 +763,21 @@ interface ToolRendererProps {
 
 const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   const [view, setView] = useState<View>('pretty');
+  // Collapsed by default: the button already says allowed or denied, and the
+  // step itself is painted, so the detail is only opened when the question is
+  // "by what", not "did it run".
+  const [permissionOpen, setPermissionOpen] = useState(false);
   const tool = step.toolName;
-  const renderer = tool ? RENDERERS[tool] : undefined;
+  // Capitalised because it is rendered as an element below, not called: a
+  // renderer with hooks of its own needs its own fiber, or its hooks land in
+  // this component's hook list and vanish the moment the view switches away
+  // from pretty.
   const parsed = useMemo(() => parseToolResult(step.toolResult), [step.toolResult]);
+  // A tool nobody wrote a renderer for still gets one when its result came
+  // back as content blocks — which is how every MCP server answers.
+  const blocks = useMemo(() => asResultBlocks(parsed.value), [parsed.value]);
+  const Renderer =
+    (tool ? RENDERERS[tool] : undefined) ?? (blocks ? ResultBlocksRenderer : undefined);
   const attachments = step.attachments ?? [];
 
   // No tool data at all — nothing to render.
@@ -676,11 +786,12 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   // A result that came back as a picture or a file is already parsed: showing
   // it is showing the attachment. So a tool with no renderer of its own still
   // gets a pretty view when it returned one.
-  const hasPretty = !!renderer || attachments.length > 0;
+  const hasPretty = !!Renderer || attachments.length > 0;
   // Tools without a pretty renderer fall back to Raw, but keep Wrap available.
   const active: View = !hasPretty && view === 'pretty' ? 'raw' : view;
   const isError = step.toolSuccess === false;
   const errorMessage = isError ? extractErrorMessage(parsed.value) : '';
+  const permission = step.permission;
 
   return (
     <div className={`tool-renderer${isError ? ' tool-renderer-error' : ''}`}>
@@ -693,35 +804,66 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
         </div>
         {/* Tools without a dedicated renderer (MCP ones especially) still get
             the bar — Raw/Wrap only — so the toolbar's token counts have a
-            consistent home. */}
-        <div className="tr-toggle">
-          {hasPretty && (
-            <button
-              className={`tr-toggle-btn${active === 'pretty' ? ' active' : ''}`}
-              onClick={() => setView('pretty')}
-              type="button"
-            >
-              {t('toolRenderer.pretty')}
-            </button>
+            consistent home. The permission toggle sits beside it as a group of
+            its own: it switches a detail row on, not the view. */}
+        <div className="tr-toolbar-right">
+          {permission && (
+            <div className="tr-permission-toggle">
+              <button
+                className={`tr-permission-btn${permissionOpen ? ' open' : ''}`}
+                onClick={() => setPermissionOpen(open => !open)}
+                type="button"
+                aria-expanded={permissionOpen}
+                title={permission.label}
+              >
+                {permission.outcome === 'allowed' ? t('toolRenderer.permAllowed') : t('toolRenderer.permDenied')}
+              </button>
+            </div>
           )}
-          <button
-            className={`tr-toggle-btn${active === 'raw' ? ' active' : ''}`}
-            onClick={() => setView('raw')}
-            type="button"
-            title={hasPretty ? undefined : t('toolRenderer.noPrettyView')}
-          >
-            {t('toolRenderer.raw')}
-          </button>
-          <button
-            className={`tr-toggle-btn${active === 'wrap' ? ' active' : ''}`}
-            onClick={() => setView('wrap')}
-            type="button"
-            title={t('toolRenderer.wrapTitle')}
-          >
-            {t('toolRenderer.wrap')}
-          </button>
+          <div className="tr-toggle">
+            {hasPretty && (
+              <button
+                className={`tr-toggle-btn${active === 'pretty' ? ' active' : ''}`}
+                onClick={() => setView('pretty')}
+                type="button"
+              >
+                {t('toolRenderer.pretty')}
+              </button>
+            )}
+            <button
+              className={`tr-toggle-btn${active === 'raw' ? ' active' : ''}`}
+              onClick={() => setView('raw')}
+              type="button"
+              title={hasPretty ? undefined : t('toolRenderer.noPrettyView')}
+            >
+              {t('toolRenderer.raw')}
+            </button>
+            <button
+              className={`tr-toggle-btn${active === 'wrap' ? ' active' : ''}`}
+              onClick={() => setView('wrap')}
+              type="button"
+              title={t('toolRenderer.wrapTitle')}
+            >
+              {t('toolRenderer.wrap')}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Who decided, opened from the toolbar. Sits directly under the token
+          counts, and stays out of the pretty/raw switch: the decision is a
+          fact about the call, not one of its views. */}
+      {permission && permissionOpen && (
+        <div className="tr-permission-row">
+          <span className="tr-permission-label">{permission.label}</span>
+          {permission.hookName && (
+            <span className="tr-permission-hook">{permission.hookName}</span>
+          )}
+          {permission.reason && (
+            <span className="tr-permission-reason">{permission.reason}</span>
+          )}
+        </div>
+      )}
 
       {/* Error banner — pretty view only. The full message is shown verbatim
           (no truncation) so the operator can debug from a glance. The raw
@@ -751,7 +893,7 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
 
       {active === 'pretty' ? (
         <>
-          {renderer?.({ input: step.toolInput, result: parsed.value })}
+          {Renderer && <Renderer input={step.toolInput} result={parsed.value} />}
           {attachments.length > 0 && (
             <Attachments attachments={attachments} agentId={step.agentId} />
           )}
