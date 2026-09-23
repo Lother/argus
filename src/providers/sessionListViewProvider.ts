@@ -1291,8 +1291,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       const label = s.customTitle || s.aiTitle || s.prompt || I18N.untitledSession;
       const base = s.prompt || label;
       const tooltip = s.isArchived && !s.isActive
-        ? I18N.archivedTooltip + '
-' + base
+        ? I18N.archivedTooltip + '\\n' + base
         : base;
       return '<div class="' + cls + '" tabindex="0" data-id="' + s.sessionId + '"'
         + ' title="' + escapeHtml(tooltip) + '">'

@@ -65,7 +65,7 @@
 到 [Releases](https://github.com/Lother/argus/releases) 下載最新的 `.vsix`：
 
 ```bash
-code --install-extension argus-claude-0.3.9-zh.vsix
+code --install-extension argus-claude-0.3.10-zh.vsix
 ```
 
 打開 VS Code，點活動列的 **Argus** 眼睛圖示，既有的 Claude Code 工作階段會自動出現。
@@ -79,7 +79,7 @@ npm install
 npm run compile
 npm run build:webview
 npx @vscode/vsce package
-code --install-extension argus-claude-0.3.9.vsix
+code --install-extension argus-claude-0.3.10.vsix
 ```
 
 ## 使用方式
