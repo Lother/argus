@@ -57,6 +57,13 @@ const COMMAND_STDOUT_RE = /<local-command-stdout>([\s\S]*?)<\/local-command-stdo
 const HEAD_SCAN_LINES = 200;
 
 /**
+ * How long after a Workflow run stopped an agent's transcript may still be
+ * written to without counting as resumed. A kill lands its last events a few
+ * milliseconds after the state file; a resumed run writes for minutes.
+ */
+const RESUME_GRACE_MS = 60 * 1000;
+
+/**
  * Size of the window read from the end of a transcript to recover the final
  * `ai-title`. Claude Code rewrites the line after almost every step, so the
  * last one sits 4.5 KB from EOF at the median and under 256 KB in >99% of
@@ -1688,6 +1695,8 @@ export class ParserService {
     | {
         workflowName: string;
         status: string;
+        /** When the run last stopped — the state file is written at that moment. */
+        endedAt: string;
         agents: Map<string, { label?: string; phaseTitle?: string; state: string }>;
       }
     | undefined {
@@ -1695,6 +1704,10 @@ export class ParserService {
     if (!fs.existsSync(statePath)) return undefined;
     try {
       const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+      const stamp = typeof state.timestamp === 'string' ? Date.parse(state.timestamp) : NaN;
+      const endedAt = new Date(
+        Number.isNaN(stamp) ? fs.statSync(statePath).mtimeMs : stamp
+      ).toISOString();
       const agents = new Map<string, { label?: string; phaseTitle?: string; state: string }>();
       const progress = Array.isArray(state.workflowProgress) ? state.workflowProgress : [];
       for (const row of progress) {
@@ -1708,6 +1721,7 @@ export class ParserService {
       return {
         workflowName: typeof state.workflowName === 'string' ? state.workflowName : runId,
         status: typeof state.status === 'string' ? state.status : '',
+        endedAt,
         agents,
       };
     } catch {
@@ -1835,13 +1849,15 @@ export class ParserService {
           const runDir = path.join(wfRoot, runId);
           if (!fs.statSync(runDir).isDirectory()) continue;
           const state = this.readWorkflowState(projectDir, sessionId, runId);
-          // The state file is only written when the run ends. While it runs,
-          // the live signal is the run's journal: a `started` line per agent
-          // launch and a `result` line when that agent completes.
+          // The state file is only written when the run stops — completed or
+          // killed. While it runs, the live signal is the run's journal: a
+          // `started` line per agent launch and a `result` line when that agent
+          // completes. A resumed run reuses the run id and directory, so the
+          // journal is read even when an older state file is present.
           const startedIds = new Set<string>();
           const resultIds = new Set<string>();
           const journalPath = path.join(runDir, 'journal.jsonl');
-          if (!state && fs.existsSync(journalPath)) {
+          if (fs.existsSync(journalPath)) {
             try {
               for (const line of fs.readFileSync(journalPath, 'utf-8').split('\n')) {
                 if (!line.trim()) continue;
@@ -1871,12 +1887,14 @@ export class ParserService {
                 ? `${state.workflowName} · ${row.phaseTitle}`
                 : state.workflowName;
             }
-            if (row) {
-              info.finished = doneStates.has(row.state);
-            } else if (state) {
-              info.finished = state.status !== 'running';
-            } else if (resultIds.has(info.agentId)) {
+            if ((row && doneStates.has(row.state)) || resultIds.has(info.agentId)) {
               info.finished = true;
+            } else if (state) {
+              // The run stopped at `endedAt`; an agent it left at `start` or
+              // `progress` was killed with it. Only steps written well after
+              // that mean a resumed run brought the agent back — the kill
+              // itself can land a last event a few milliseconds late.
+              info.finished = ParserService.finishedBy(info, state.endedAt, RESUME_GRACE_MS);
             } else if (startedIds.has(info.agentId)) {
               info.finished = false;
             }
@@ -1978,11 +1996,11 @@ export class ParserService {
    * step of its own is newer — a resumed agent keeps appending steps after
    * its notification, and counts as running again until the next one.
    */
-  static finishedBy(sub: SubagentInfo, signalAt: string | undefined): boolean {
+  static finishedBy(sub: SubagentInfo, signalAt: string | undefined, graceMs = 0): boolean {
     if (!signalAt) return false;
     const last = sub.steps.length ? sub.steps[sub.steps.length - 1].timestamp : undefined;
     if (!last) return true;
-    return new Date(last).toISOString() <= signalAt;
+    return new Date(last).getTime() <= Date.parse(signalAt) + graceMs;
   }
 
   // Helper methods
