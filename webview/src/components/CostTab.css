@@ -145,3 +145,75 @@
   font-size: 11px;
   color: var(--text-dim);
 }
+
+/* Rates each model in view was priced at — the "where does this number come
+   from" answer, kept below the breakdown so it never crowds the charts. */
+.cost-pricing {
+  margin-top: 32px;
+}
+
+.cost-pricing h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-bright);
+}
+
+.cost-pricing-unit {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.cost-pricing-scroll {
+  overflow-x: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.cost-pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-pricing-table th,
+.cost-pricing-table td {
+  padding: 8px 12px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.cost-pricing-table th:first-child,
+.cost-pricing-table td:first-child {
+  text-align: left;
+}
+
+.cost-pricing-table th {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.cost-pricing-table tr:last-child td {
+  border-bottom: none;
+}
+
+.cost-pricing-table tr.is-estimate td {
+  color: var(--text-dim);
+}
+
+.cost-pricing-fallback {
+  margin-left: 8px;
+  font-size: 10px;
+  color: var(--status-warning, #d4a72c);
+}
+
+.cost-currency-note {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}

@@ -49,6 +49,7 @@ export const extEn: Messages = {
   'sidebar.custom': 'Custom',
   'sidebar.unknownProject': 'Unknown Project',
   'sidebar.noSessionsFound': 'No sessions found',
+  'sidebar.archivedTooltip': 'Archived in Claude Code',
   'sidebar.untitledSession': 'Untitled Session',
   'sidebar.time.justNow': 'just now',
   'sidebar.time.minutesAgo': '{n}m ago',

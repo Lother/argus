@@ -11,6 +11,7 @@ import {
   SubagentInfo,
   calculateCost,
   getModelPricing,
+  hasBilledTokens,
   isSystemStep,
 } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
@@ -367,6 +368,12 @@ interface QuickMetadata {
    * line. Empty when the session never got one.
    */
   aiTitle: string;
+  /**
+   * Title the user typed over the generated one, written as a
+   * `{"type":"custom-title"}` line. Empty when the session was never renamed,
+   * or when a later rename cleared the name again.
+   */
+  customTitle: string;
 }
 
 export class ParserService {
@@ -403,19 +410,20 @@ export class ParserService {
    * Extract quick metadata from a session file without full parsing
    */
   async quickMetadataWithPrompt(filePath: string): Promise<QuickMetadata | null> {
-    try {
-      const fileStream = fs.createReadStream(filePath);
-      const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
-      });
+    const fileStream = fs.createReadStream(filePath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
 
+    try {
       let model = '';
       let firstTimestamp = '';
       let lastTimestamp = '';
       let prompt = '';
       let cwd = '';
       let aiTitle = '';
+      let customTitle = '';
       let foundFirst = false;
       let lines = 0;
 
@@ -457,6 +465,12 @@ export class ParserService {
             aiTitle = base.aiTitle.trim();
           }
 
+          // A rename is appended when it happens, so the last one in the file
+          // wins — including one that cleared the name back to empty.
+          if (base.type === 'custom-title' && typeof base.customTitle === 'string') {
+            customTitle = base.customTitle.trim();
+          }
+
           // Extract prompt from user events
           if (!prompt && base.type === 'user') {
             prompt = this.extractPromptFromEvent(base);
@@ -482,8 +496,8 @@ export class ParserService {
         return null;
       }
 
-      // The title seen in the head can be a draft that a later line replaces.
-      const finalTitle = await this.readTailAiTitle(filePath);
+      // The titles seen in the head can be drafts that later lines replace.
+      const tail = await this.readTailTitles(filePath);
 
       return {
         model,
@@ -491,21 +505,35 @@ export class ParserService {
         lastTimestamp,
         prompt,
         cwd,
-        aiTitle: finalTitle || aiTitle,
+        aiTitle: tail.aiTitle || aiTitle,
+        // A rename the tail saw wins outright, even when it cleared the name:
+        // falling back to an older one would resurrect a title the user
+        // deleted.
+        customTitle: tail.customTitle ?? customTitle,
       };
     } catch (err) {
       console.error('Error reading metadata from', filePath, err);
       return null;
+    } finally {
+      rl.close();
+      fileStream.destroy();
     }
   }
 
   /**
-   * Last `ai-title` written in the tail window of a transcript, or '' when the
-   * window holds none. Reading the tail rather than the whole file keeps
-   * discovery off multi-megabyte transcripts; the caller falls back to the
-   * title from the head when this comes back empty.
+   * Last `ai-title` and last `custom-title` written in the tail window of a
+   * transcript. Reading the tail rather than the whole file keeps discovery off
+   * multi-megabyte transcripts; the caller falls back to the titles from the
+   * head for whatever the window did not hold — `''` for the generated title,
+   * `null` for the custom one, which has to tell "never renamed" apart from
+   * "renamed to nothing".
    */
-  private async readTailAiTitle(filePath: string): Promise<string> {
+  private async readTailTitles(
+    filePath: string
+  ): Promise<{ aiTitle: string; customTitle: string | null }> {
+    let aiTitle = '';
+    let customTitle: string | null = null;
+
     try {
       const { size } = await fs.promises.stat(filePath);
       const start = Math.max(0, size - TAIL_SCAN_BYTES);
@@ -524,13 +552,23 @@ export class ParserService {
 
       for (let i = lines.length - 1; i >= first; i--) {
         const line = lines[i];
-        if (!line.includes('"ai-title"')) {
+        if (!line.includes('"ai-title"') && !line.includes('"custom-title"')) {
           continue;
         }
         try {
           const event: any = JSON.parse(line);
-          if (event.type === 'ai-title' && typeof event.aiTitle === 'string') {
-            return event.aiTitle.trim();
+          if (!aiTitle && event.type === 'ai-title' && typeof event.aiTitle === 'string') {
+            aiTitle = event.aiTitle.trim();
+          }
+          if (
+            customTitle === null &&
+            event.type === 'custom-title' &&
+            typeof event.customTitle === 'string'
+          ) {
+            customTitle = event.customTitle.trim();
+          }
+          if (aiTitle && customTitle !== null) {
+            break;
           }
         } catch {
           continue;
@@ -540,7 +578,7 @@ export class ParserService {
       // Unreadable file: the head pass already reported what it could.
     }
 
-    return '';
+    return { aiTitle, customTitle };
   }
 
   /**
@@ -604,8 +642,9 @@ export class ParserService {
     const toolsUsed = new Map<string, number>();
 
     let model = '';
-    let startTime = new Date();
-    let endTime = new Date();
+    let effort = '';
+    let startTime: Date | undefined;
+    let endTime: Date | undefined;
     let totalCost = 0;
     const agentFinishedAt: Record<string, string> = {};
     const noteNotifications = (text: string, timestamp: string) => {
@@ -650,6 +689,12 @@ export class ParserService {
       // model — a session can switch models mid-way.
       if (!model && event.message?.model && event.message.model !== '<synthetic>') {
         model = event.message.model;
+      }
+
+      // Session-level reasoning effort, same rule as model: first request that
+      // names one wins, for display only.
+      if (!effort && typeof event.effort === 'string' && event.effort) {
+        effort = event.effort;
       }
 
       // Extract timestamps
@@ -866,7 +911,7 @@ export class ParserService {
           chargedMessages.add(messageId);
         }
         const costIsEstimate =
-          !!usage && getModelPricing(eventModel).isFallback;
+          hasBilledTokens(usage) && getModelPricing(eventModel).isFallback;
 
         // Drains on first read, so the charge lands on the first step the
         // message actually produces — blocks that yield no step (empty text,
@@ -1091,15 +1136,21 @@ export class ParserService {
       }
     }
 
-    const durationMs = endTime.getTime() - startTime.getTime();
+    // No event carried a timestamp — an empty or malformed transcript. Both
+    // callers already guard against an empty `events` array, so this is a
+    // defensive fallback rather than the expected path.
+    const finalStartTime = startTime ?? new Date();
+    const finalEndTime = endTime ?? finalStartTime;
+    const durationMs = finalEndTime.getTime() - finalStartTime.getTime();
 
     return {
       sessionId,
       prompt,
       project,
       model,
-      startTime,
-      endTime,
+      effort,
+      startTime: finalStartTime,
+      endTime: finalEndTime,
       durationMs,
       totalCost,
       steps,
@@ -1739,6 +1790,7 @@ export class ParserService {
         agentId,
         prompt,
         model: session.model || metaModel || '',
+        effort: session.effort,
         agentType,
         description,
         parentAgentId,

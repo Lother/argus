@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { SessionDetail, flattenSessionSteps, isSystemStep } from './types/session';
 import { SYSTEM_STEP_TOGGLES, systemToggleOf } from './components/systemSteps';
 import { formatModelLabel } from '../../src/types/modelFamily';
+import { effortLabel } from './utils/effortLabel';
 import StepsTab from './components/StepsTab';
 import AnalysisTab from './components/AnalysisTab';
 import CostTab from './components/CostTab';
@@ -117,8 +118,9 @@ function App() {
 
   // Every other tab measures the session — cost, context, durations, file
   // dependencies — and a harness event is none of those things. They see the
-  // timeline without them, whatever the buttons say. `session.steps` is the
-  // main session alone (no sub-agents), which is what those tabs expect.
+  // timeline without them. Cost and Context filter this down to main/one
+  // agent/everything themselves (see `AgentFilterBar`); the rest still expect
+  // `mainSteps`, the main session alone.
   const analyticSteps = useMemo(() => flatSteps.filter(step => !isSystemStep(step)), [flatSteps]);
   const mainSteps = useMemo(
     () => (session ? session.steps.filter(step => !isSystemStep(step)) : []),
@@ -132,15 +134,6 @@ function App() {
   // to be numbered the way the Steps tab numbers it. Sub-agent steps stay out,
   // so a Task keeps the duration of the whole agent it spawned.
   const mainFlatSteps = useMemo(() => flatSteps.filter(step => !step.agentId), [flatSteps]);
-
-  // The same steps as `mainSteps` — so the token maths on the Context tab is
-  // unchanged — but numbered the way the Steps tab numbers them. Its charts
-  // navigate on click, and `session.steps` carries no `globalIndex` to
-  // navigate by.
-  const mainAnalyticSteps = useMemo(
-    () => mainFlatSteps.filter(step => !isSystemStep(step)),
-    [mainFlatSteps]
-  );
 
   // "Steps (55)" normally, "Steps (13/55)" while a search or filter narrows it.
   const stepsTabLabel =
@@ -262,10 +255,22 @@ function App() {
   return (
     <div className="app">
       <div className="detail-header">
-        <h2 title={session.prompt}>{session.aiTitle || session.prompt}</h2>
+        <h2 title={session.prompt}>
+          {session.customTitle || session.aiTitle || session.prompt}
+        </h2>
         <div className="detail-meta">
           <span>{session.project}</span>
           <span className="meta-badge">{formatModel(session.model)}</span>
+          {session.effort && (
+            <span className="meta-badge meta-badge-effort" title={t('app.effortTitle', { effort: session.effort })}>
+              {effortLabel(session.effort)}
+            </span>
+          )}
+          {session.isArchived && (
+            <span className="meta-badge archived" title={t('app.archivedTitle')}>
+              {t('app.archived')}
+            </span>
+          )}
           <span>{formatDuration(session.durationMs)}</span>
           <span className="meta-dim">
 {t('app.stepCount', { count: timelineSteps.length })}
@@ -447,6 +452,7 @@ function App() {
             steps={timelineSteps}
             allSteps={flatSteps}
             subagents={session.subagents}
+            mainEffort={session.effort}
             findings={session.analysis?.findings || []}
             highlightStep={highlightStep}
             defaultSortMode={stepsSortOrder}
@@ -469,10 +475,9 @@ onMarkAgentFinished={markAgentFinished}
         )}
         {activeTab === 'cost' && (
           <CostTab
-steps={mainSteps}
-            analysis={session.analysis}
+            steps={analyticSteps}
             subagents={session.subagents}
-            sessionTotalCost={session.totalCost}
+            analysis={session.analysis}
             onGoToStep={goToStep}
           />
         )}
@@ -492,7 +497,8 @@ steps={mainSteps}
         )}
         {activeTab === 'context' && (
           <ContextTab
-            steps={mainAnalyticSteps}
+            steps={analyticSteps}
+            subagents={session.subagents}
             analysis={session.analysis}
             onGoToStep={goToStep}
           />

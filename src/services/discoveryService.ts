@@ -18,6 +18,8 @@ export interface DiscoveredSession {
   prompt: string;
   /** Title Claude Code generated for the session, '' when it never did. */
   aiTitle: string;
+  /** Title the user renamed the session to, '' when they never did. */
+  customTitle: string;
   timestamp: Date;
   lastModified: Date;
   source: 'history' | 'scan';
@@ -49,8 +51,15 @@ export class DiscoveryService {
   private lastDiscovery: Date = new Date(0);
   private parserService: ParserService;
 
-  constructor() {
+  /**
+   * Whether Claude Code has a session archived. Optional: discovery works
+   * without it, sessions then simply carry no archived mark.
+   */
+  private archived?: { isArchived(sessionId: string): boolean };
+
+  constructor(archived?: { isArchived(sessionId: string): boolean }) {
     this.parserService = new ParserService();
+    this.archived = archived;
   }
 
   /**
@@ -170,12 +179,14 @@ export class DiscoveryService {
         sessionId: ds.sessionId,
         prompt: ds.prompt,
         aiTitle: ds.aiTitle || undefined,
+        customTitle: ds.customTitle || undefined,
         project: ds.project,
         projectPath: ds.projectPath,
         model: ds.model,
         timestamp: ds.timestamp,
         lastModified: ds.lastModified,
         isActive: this.isSessionActive(ds, now),
+        isArchived: this.archived?.isArchived(ds.sessionId) ?? false,
       });
     }
 
@@ -427,6 +438,7 @@ export class DiscoveryService {
       model: metadata.model || 'unknown',
       prompt: '',
       aiTitle: metadata.aiTitle,
+      customTitle: metadata.customTitle,
       timestamp: new Date(),
       lastModified: new Date(),
       source: 'scan',

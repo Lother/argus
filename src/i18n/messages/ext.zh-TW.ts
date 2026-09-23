@@ -44,6 +44,7 @@ export const extZhTW: Messages = {
   'sidebar.custom': '自訂',
   'sidebar.unknownProject': '未知專案',
   'sidebar.noSessionsFound': '找不到工作階段',
+  'sidebar.archivedTooltip': '已在 Claude Code 中封存',
   'sidebar.untitledSession': '未命名工作階段',
   'sidebar.time.justNow': '剛剛',
   'sidebar.time.minutesAgo': '{n} 分鐘前',

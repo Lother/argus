@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { Step } from '../types/session';
+import { FileEvent, commonAncestor, extractFileEvents } from '../utils/fileActivity';
+import { TreeNode, buildFileTree, hasActivity } from '../utils/fileTree';
 import { t } from '../i18n';
 import './MapTab.css';
+
+const MARK_KIND_KEYS: Record<string, string> = {
+  read: 'map.kindRead',
+  write: 'map.kindWrite',
+  delete: 'map.kindDelete',
+};
+
+// Pill width from its text: wide (CJK) glyphs take about 1.5x the space of the
+// uppercase Latin these pills were sized for, and a translated label must not
+// spill out of its capsule.
+const pillTextWidth = (label: string): number =>
+  [...label].reduce((w, ch) => w + (ch.codePointAt(0)! >= 0x2e80 ? 10.5 : 7.2), 0);
 
 export interface DirEntry {
   name: string;
@@ -14,28 +28,6 @@ interface Props {
   cwd: string;
   topLevelEntries: DirEntry[];
   onGoToStep?: (stepIndex: number) => void;
-}
-
-type NodeStatus = 'dim' | 'read' | 'written';
-type NodeKind = 'file' | 'dir' | 'root';
-
-interface TreeNode {
-  name: string;
-  path: string;
-  type: NodeKind;
-  status: NodeStatus;
-  revealedAt: number;
-  readCount: number;
-  writeCount: number;
-  agentTouched: boolean;
-  children?: TreeNode[];
-}
-
-interface StepEvent {
-  path: string;
-  kind: 'read' | 'write';
-  stepIndex: number;
-  agentId?: string;
 }
 
 const NODE_W = 340;
@@ -53,7 +45,6 @@ const ICON_TILE_RADIUS = 7;
 const ICON_TILE_X = -NODE_W / 2 + 14; // left padding 14px
 const ICON_GLYPH = 16;
 const LABEL_X = ICON_TILE_X + ICON_TILE + 12; // 12px gap to label
-const LABEL_FONT = 13;
 const RIGHT_PAD = 12;
 const CHIP_H = 22;
 const CHIP_GAP = 6;
@@ -63,6 +54,7 @@ const CHIP_LETTER_W = 7; // mono "R"/"W" at 10.5px
 const CHIP_DIGIT_W = 7;
 const AGENT_PILL_W = 60;
 const AGENT_PILL_H = 22;
+const LIFECYCLE_PILL_H = 22;
 const LABEL_CHAR_W = 7.2; // mono char width at 13px
 
 // Middle ellipsis — keeps the start (often distinctive) and the file extension
@@ -81,10 +73,12 @@ const truncateMiddle = (s: string, n: number) => {
 const ICON_FOLDER = 'M3 7 H9 L11 9 H21 V19 H3 Z';
 const ICON_FILE = 'M6 3 H15 L19 7 V21 H6 Z M15 3 V7 H19';
 const ICON_HOME = 'M3 12 L12 4 L21 12 V20 H3 Z M10 20 V14 H14 V20';
+const ICON_TRASH = 'M4 7 H20 M9 7 V4 H15 V7 M6 7 L7.2 20 H16.8 L18 7 M10 11 V17 M14 11 V17';
 
-const iconFor = (type: NodeKind) => {
-  if (type === 'root') return ICON_HOME;
-  if (type === 'dir') return ICON_FOLDER;
+const iconFor = (node: TreeNode) => {
+  if (node.deletedAt >= 0) return ICON_TRASH;
+  if (node.isCwd || node.type === 'root') return ICON_HOME;
+  if (node.type === 'dir') return ICON_FOLDER;
   return ICON_FILE;
 };
 
@@ -95,6 +89,14 @@ const intensityBucket = (count: number): 0 | 1 | 2 | 3 => {
   if (count <= 3) return 2;
   return 3;
 };
+
+interface Preview {
+  name: string;
+  abs: string;
+  createdAt: number;
+  deletedAt: number;
+  content?: string;
+}
 
 const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
   const onGoToStepRef = useRef(onGoToStep);
@@ -109,68 +111,76 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
   const pendingRenderRef = useRef(false);
   const knownPathsRef = useRef<Set<string>>(new Set());
   const prevLastRevealedRef = useRef<string>('');
-  const freshPathsRef = useRef<Set<string>>(new Set());
 
-  const [currentStep, setCurrentStep] = useState<number>(steps.length);
+  // Steps are numbered by `globalIndex`, which counts the harness events this
+  // tab filters out — so the last file event can sit past `steps.length`, and
+  // a playhead bounded by the array length would never reach it.
+  const totalSteps = useMemo(() => {
+    let max = steps.length;
+    for (const step of steps) max = Math.max(max, (step.globalIndex ?? step.index) + 1);
+    return max;
+  }, [steps]);
+
+  const [currentStep, setCurrentStep] = useState<number>(totalSteps);
   const [playing, setPlaying] = useState(false);
   const [speedMs, setSpeedMs] = useState(350);
   const [renderTick, setRenderTick] = useState(0);
+  // Off by default: a project's folders are its table of contents, not what
+  // the session did. Untouched ones used to fill the canvas while the files
+  // that were actually edited had no node at all.
+  const [showAllFolders, setShowAllFolders] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
 
   // Reset cursor when steps change (new session loaded)
   useEffect(() => {
-    setCurrentStep(steps.length);
+    setCurrentStep(totalSteps);
     knownPathsRef.current = new Set();
-  }, [steps.length]);
+    setPreview(null);
+  }, [totalSteps]);
 
   // Track recent drag to avoid animation during drag settle time
   const recentlyDraggedRef = useRef(false);
   const dragSettleTimeoutRef = useRef<number | null>(null);
 
-  // Extract file events relative to cwd
-  const stepEvents = useMemo<StepEvent[]>(() => {
-    if (!cwd) return [];
-    const cwdNorm = cwd.replace(/\/+$/, '');
-    const out: StepEvent[] = [];
-    for (const step of steps) {
-      const fp: string | undefined = step.toolInput?.file_path;
-      if (!fp || typeof fp !== 'string') continue;
-      let rel: string | null = null;
-      if (fp === cwdNorm) continue;
-      if (fp.startsWith(cwdNorm + '/')) {
-        rel = fp.slice(cwdNorm.length + 1);
-      } else if (!fp.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(fp)) {
-        rel = fp;
-      } else {
-        continue;
-      }
-      rel = rel.replace(/\\/g, '/').replace(/^\.\/+/, '');
-      if (!rel) continue;
-      const tn = step.toolName;
-      const stepIndex = step.globalIndex ?? step.index;
-      if (tn === 'Read') {
-        out.push({ path: rel, kind: 'read', stepIndex, agentId: step.agentId });
-      } else if (tn === 'Write' || tn === 'Edit' || tn === 'MultiEdit') {
-        out.push({ path: rel, kind: 'write', stepIndex, agentId: step.agentId });
-      }
-    }
-    return out;
-  }, [steps, cwd]);
+  // The host sends the real working directory; `session.project` is only a
+  // display name, and treating it as a path would put a made-up folder at the
+  // root of the tree.
+  const cwdPath = useMemo(
+    () => (/^([a-zA-Z]:[\\/]|\/)/.test(cwd) ? cwd.replace(/\/+$/, '') : ''),
+    [cwd]
+  );
+
+  // Everything the session touched, wherever it lives — tool calls name their
+  // paths outright, shell commands are parsed for the shapes that create and
+  // remove files. See `utils/fileActivity`.
+  const events = useMemo<FileEvent[]>(() => extractFileEvents(steps, cwdPath), [steps, cwdPath]);
+
+  // Where the tree is rooted: the deepest directory holding the cwd and every
+  // path the session touched. Equal to the cwd for the ordinary in-project
+  // session, higher up for one that also wrote to `~/.claude` or `/tmp`.
+  const anchor = useMemo(() => {
+    const dirs = events.map((e) => (e.isDir ? e.path : e.path.replace(/\/[^/]*$/, '')));
+    return commonAncestor([...(cwdPath ? [cwdPath] : []), ...dirs]) || cwdPath;
+  }, [events, cwdPath]);
 
   // Activity ranges for the timeline overlay — collapse contiguous step
   // indices that share the same activity kind into a single span so the
-  // slider track shows clear blue/green zones instead of hundreds of
-  // 1-pixel ticks. Write takes precedence over read at the same step.
+  // slider track shows clear zones instead of hundreds of 1-pixel ticks.
+  // Delete beats write beats read at the same step.
   const activityRanges = useMemo(() => {
-    const max = Math.max(steps.length, 1);
-    if (stepEvents.length === 0) return { ranges: [] as { start: number; end: number; kind: 'read' | 'write' }[], max };
-    const slots = new Array<'read' | 'write' | null>(max).fill(null);
-    for (const ev of stepEvents) {
+    const max = Math.max(totalSteps, 1);
+    type Mark = 'read' | 'write' | 'delete';
+    if (events.length === 0) return { ranges: [] as { start: number; end: number; kind: Mark }[], max };
+    const rank: Record<Mark, number> = { read: 0, write: 1, delete: 2 };
+    const slots = new Array<Mark | null>(max).fill(null);
+    for (const ev of events) {
       if (ev.stepIndex < 0 || ev.stepIndex >= max) continue;
-      if (ev.kind === 'write') slots[ev.stepIndex] = 'write';
-      else if (slots[ev.stepIndex] !== 'write') slots[ev.stepIndex] = 'read';
+      const mark: Mark = ev.kind === 'delete' ? 'delete' : ev.kind === 'read' ? 'read' : 'write';
+      const cur = slots[ev.stepIndex];
+      if (!cur || rank[mark] > rank[cur]) slots[ev.stepIndex] = mark;
     }
-    const ranges: { start: number; end: number; kind: 'read' | 'write' }[] = [];
-    let cur: { start: number; end: number; kind: 'read' | 'write' } | null = null;
+    const ranges: { start: number; end: number; kind: Mark }[] = [];
+    let cur: { start: number; end: number; kind: Mark } | null = null;
     for (let i = 0; i < max; i++) {
       const k = slots[i];
       if (k) {
@@ -186,106 +196,40 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
     }
     if (cur) ranges.push(cur);
     return { ranges, max };
-  }, [stepEvents, steps.length]);
+  }, [events, totalSteps]);
 
-  // Build the tree up to the current step
-  const { root, lastRevealedPath, lastAppliedStep } = useMemo(() => {
-    const rootName = cwd ? cwd.split('/').filter(Boolean).pop() || cwd : t('map.rootFallback');
-    const rootNode: TreeNode = {
-      name: rootName,
-      path: '',
-      type: 'root',
-      status: 'dim',
-      revealedAt: -1,
-      readCount: 0,
-      writeCount: 0,
-      agentTouched: false,
-      children: [],
-    };
-    const map = new Map<string, TreeNode>();
-    map.set('', rootNode);
-
-    // Top-level shows only directories by default; top-level files appear
-    // lazily when Claude reads/writes them (via stepEvents below).
-    for (const entry of topLevelEntries) {
-      if (entry.type !== 'dir') continue;
-      const n: TreeNode = {
-        name: entry.name,
-        path: entry.name,
-        type: 'dir',
-        status: 'dim',
-        revealedAt: -1,
-        readCount: 0,
-        writeCount: 0,
-        agentTouched: false,
-        children: [],
-      };
-      rootNode.children!.push(n);
-      map.set(entry.name, n);
-    }
-
-    let lastPath = '';
-    let lastStep = -1;
-    for (const ev of stepEvents) {
-      if (ev.stepIndex >= currentStep) break;
-      const segments = ev.path.split('/').filter(Boolean);
-      let acc = '';
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        const parentPath = acc;
-        acc = acc ? `${acc}/${seg}` : seg;
-        const isLast = i === segments.length - 1;
-        let node = map.get(acc);
-        if (!node) {
-          const parent = map.get(parentPath);
-          if (!parent) break;
-          if (!parent.children) parent.children = [];
-          node = {
-            name: seg,
-            path: acc,
-            type: isLast ? 'file' : 'dir',
-            status: 'dim',
-            revealedAt: ev.stepIndex,
-            readCount: 0,
-            writeCount: 0,
-            agentTouched: false,
-            children: isLast ? undefined : [],
-          };
-          parent.children.push(node);
-          map.set(acc, node);
-        }
-        if (isLast) {
-          if (ev.kind === 'read') {
-            node.readCount += 1;
-            if (node.status !== 'written') node.status = 'read';
-          } else {
-            node.writeCount += 1;
-            node.status = 'written';
-          }
-          if (node.revealedAt < 0) node.revealedAt = ev.stepIndex;
-          if (ev.agentId) node.agentTouched = true;
-          lastPath = acc;
-        }
-      }
-      lastStep = ev.stepIndex;
-    }
-
-    return { root: rootNode, lastRevealedPath: lastPath, lastAppliedStep: lastStep };
-  }, [stepEvents, topLevelEntries, currentStep, cwd]);
+  // The tree as of the playhead — only what the session touched, plus the
+  // folders leading to it. See `utils/fileTree`.
+  const { root, lastRevealedPath, lastAppliedStep } = useMemo(
+    () =>
+      buildFileTree({
+        events,
+        anchor,
+        cwd: cwdPath,
+        topLevelEntries,
+        showAllFolders,
+        currentStep,
+      }),
+    [events, anchor, cwdPath, topLevelEntries, showAllFolders, currentStep]
+  );
 
   // Stats
   const stats = useMemo(() => {
     let revealed = 0;
     let read = 0;
     let written = 0;
+    let created = 0;
+    let deleted = 0;
     const walk = (n: TreeNode) => {
       revealed += 1;
       if (n.status === 'read') read += 1;
       else if (n.status === 'written') written += 1;
+      if (n.createdAt >= 0) created += 1;
+      if (n.deletedAt >= 0) deleted += 1;
       n.children?.forEach(walk);
     };
     walk(root);
-    return { revealed: revealed - 1, read, written };
+    return { revealed: revealed - 1, read, written, created, deleted };
   }, [root]);
 
   // Render
@@ -442,6 +386,8 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
           isFresh ? 'map-node-fresh' : '',
           clickable ? 'map-node-clickable' : '',
           data.agentTouched ? 'map-node-agent' : '',
+          data.isCwd ? 'map-node-cwd' : '',
+          data.shellOnly && hasActivity(data) ? 'map-node-shell' : '',
         ]
           .filter(Boolean)
           .join(' ');
@@ -451,6 +397,18 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
         const data = d.data;
         if (data.status === 'dim' || data.revealedAt < 0) return;
         event.stopPropagation();
+        // A deleted file cannot be opened — the transcript is the only place
+        // it still exists, so show what the session recorded of it instead.
+        if (data.deletedAt >= 0) {
+          setPreview({
+            name: data.name,
+            abs: data.abs,
+            createdAt: data.createdAt,
+            deletedAt: data.deletedAt,
+            content: data.content,
+          });
+          return;
+        }
         onGoToStepRef.current?.(data.revealedAt);
       });
 
@@ -531,7 +489,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
     iconWrap
       .append('path')
       .attr('class', 'map-node-iconpath')
-      .attr('d', (d: any) => iconFor((d as any).data.type))
+      .attr('d', (d: any) => iconFor(d.data as TreeNode))
       .attr('fill', 'none')
       .attr('stroke-width', 1.9)
       .attr('stroke-linecap', 'round')
@@ -611,11 +569,18 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
 
     nodes.append('title').text((d) => {
       const data = d.data;
-      const lines = [data.path || data.name];
+      const lines = [data.abs || data.name];
+      if (data.isCwd) lines.push(t('map.tooltipCwd'));
       if (data.readCount) lines.push(t('map.tooltipReads', { count: data.readCount }));
       if (data.writeCount) lines.push(t('map.tooltipWrites', { count: data.writeCount }));
+      if (data.createdAt >= 0) lines.push(t('map.tooltipCreated', { index: data.createdAt }));
+      if (data.deletedAt >= 0) {
+        lines.push(t('map.tooltipDeleted', { index: data.deletedAt }));
+        lines.push(data.content ? t('map.tooltipClickContent') : t('map.tooltipClickDetails'));
+      }
       if (data.agentTouched) lines.push(t('map.tooltipAgentTouched'));
-      if (data.revealedAt >= 0) {
+      if (data.shellOnly && hasActivity(data)) lines.push(t('map.tooltipShellOnly'));
+      if (data.revealedAt >= 0 && data.deletedAt < 0) {
         lines.push(t('map.tooltipClickStep', { index: data.revealedAt }));
       }
       return lines.join('\n');
@@ -648,6 +613,37 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
       .attr('y', AGENT_PILL_H / 2 + 3.6)
       .attr('text-anchor', 'middle')
       .text(t('map.agentPill'));
+
+    // Lifecycle pill, top-left corner — a file this session brought into
+    // existence, and one it removed again. Both are invisible on disk
+    // afterwards, which is exactly why they are worth a badge.
+    nodeInner.each(function (d) {
+      const data = d.data;
+      const label =
+        data.deletedAt >= 0 ? t('map.pillDeleted') : data.createdAt >= 0 ? t('map.pillNew') : '';
+      if (!label) return;
+      const w = 16 + pillTextWidth(label);
+      const pill = d3
+        .select(this)
+        .append('g')
+        .attr(
+          'class',
+          `map-node-life-pill map-node-life-${data.deletedAt >= 0 ? 'deleted' : 'created'}`
+        )
+        .attr('transform', `translate(${-NODE_W / 2 + 8},${-NODE_H / 2 - LIFECYCLE_PILL_H / 2 + 4})`);
+      pill
+        .append('rect')
+        .attr('width', w)
+        .attr('height', LIFECYCLE_PILL_H)
+        .attr('rx', LIFECYCLE_PILL_H / 2)
+        .attr('ry', LIFECYCLE_PILL_H / 2);
+      pill
+        .append('text')
+        .attr('x', w / 2)
+        .attr('y', LIFECYCLE_PILL_H / 2 + 3.6)
+        .attr('text-anchor', 'middle')
+        .text(label);
+    });
 
     // Apply bounce animation to fresh nodes via D3 transition
     if (freshPaths.size > 0) {
@@ -707,15 +703,15 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
   // Autoplay
   useEffect(() => {
     if (!playing) return;
-    if (currentStep >= steps.length) {
+    if (currentStep >= totalSteps) {
       setPlaying(false);
       return;
     }
     const id = window.setTimeout(() => {
-      setCurrentStep((c) => Math.min(c + 1, steps.length));
+      setCurrentStep((c) => Math.min(c + 1, totalSteps));
     }, speedMs);
     return () => window.clearTimeout(id);
-  }, [playing, currentStep, steps.length, speedMs]);
+  }, [playing, currentStep, totalSteps, speedMs]);
 
   const resetView = () => {
     if (!svgRef.current || !zoomRef.current) return;
@@ -728,11 +724,14 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
       .call(zoomRef.current.transform as any, d3.zoomIdentity);
   };
 
-  if (!cwd) {
+  // With neither a working directory nor a single file event there is nothing
+  // to draw. A session with only the latter still gets a map: the files it
+  // touched are the point, and they are not always under the cwd.
+  if (!cwdPath && events.length === 0) {
     return (
       <div className="map-empty">
         <span className="map-empty-icon">🗺️</span>
-        <p>{t('map.emptyState')}</p>
+        <p>{t('map.emptyNoFiles')}</p>
       </div>
     );
   }
@@ -744,10 +743,10 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
           <button
             className="map-btn map-btn-primary"
             onClick={() => {
-              if (currentStep >= steps.length) setCurrentStep(0);
+              if (currentStep >= totalSteps) setCurrentStep(0);
               setPlaying((p) => !p);
             }}
-            title={t(playing ? 'map.pause' : 'map.play')}
+            title={playing ? t('map.pause') : t('map.play')}
           >
             {playing ? '⏸' : '▶'}
           </button>
@@ -765,7 +764,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
             className="map-btn"
             onClick={() => {
               setPlaying(false);
-              setCurrentStep(steps.length);
+              setCurrentStep(totalSteps);
             }}
             title={t('map.jumpToEnd')}
           >
@@ -778,7 +777,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
             <div
               className="map-slider-progress"
               style={{
-                width: `${(currentStep / Math.max(steps.length, 1)) * 100}%`,
+                width: `${(currentStep / Math.max(totalSteps, 1)) * 100}%`,
               }}
             />
             {activityRanges.ranges.map((r, i) => {
@@ -792,12 +791,9 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
                   style={{ left: `${left}%`, width: `${width}%` }}
                   title={
                     r.start === r.end
-                      ? t('map.markAtStep', {
-                          kind: t(r.kind === 'read' ? 'map.kindRead' : 'map.kindWrite'),
-                          step: r.start,
-                        })
+                      ? t('map.markAtStep', { kind: t(MARK_KIND_KEYS[r.kind] ?? 'map.kindRead'), step: r.start })
                       : t('map.markDuringSteps', {
-                          kind: t(r.kind === 'read' ? 'map.kindRead' : 'map.kindWrite'),
+                          kind: t(MARK_KIND_KEYS[r.kind] ?? 'map.kindRead'),
                           start: r.start,
                           end: r.end,
                         })
@@ -810,7 +806,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
             className="map-slider"
             type="range"
             min={0}
-            max={steps.length}
+            max={totalSteps}
             value={currentStep}
             onChange={(e) => {
               setPlaying(false);
@@ -821,7 +817,7 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
 
         <div className="map-controls-right">
           <span className="map-step-counter">
-            {currentStep} / {steps.length}
+            {currentStep} / {totalSteps}
           </span>
           <select
             className="map-speed"
@@ -834,6 +830,17 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
             <option value={150}>2×</option>
             <option value={60}>4×</option>
           </select>
+          <button
+            className={`map-btn ${showAllFolders ? 'map-btn-on' : ''}`}
+            onClick={() => setShowAllFolders((v) => !v)}
+            title={
+              showAllFolders
+                ? t('map.showAllFoldersOn')
+                : t('map.showAllFoldersOff')
+            }
+          >
+            🗂
+          </button>
           <button className="map-btn" onClick={resetView} title={t('map.resetView')}>
             ⊕
           </button>
@@ -853,9 +860,63 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
             <span className="map-legend-dot written" /> {t('map.legendWritten')}
           </span>
           <span className="map-legend-item">
+            <span className="map-legend-dot deleted" /> {t('map.legendDeleted')}
+          </span>
+          <span className="map-legend-item">
             <span className="map-legend-dot agent" /> {t('map.legendSubagent')}
           </span>
         </div>
+
+        {stats.revealed === 0 && (
+          <div className="map-hint">
+            {currentStep === 0
+              ? t('map.hintPressPlay')
+              : t('map.hintNoFiles')}
+          </div>
+        )}
+
+        {preview && (
+          <div className="map-preview" role="dialog" aria-label={t('map.previewDialog')}>
+            <div className="map-preview-head">
+              <div className="map-preview-title">
+                <span className="map-preview-name">{preview.name}</span>
+                <span className="map-preview-path" title={preview.abs}>
+                  {preview.abs}
+                </span>
+              </div>
+              <button
+                className="map-btn"
+                onClick={() => setPreview(null)}
+                title={t('map.close')}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="map-preview-meta">
+              {preview.createdAt >= 0 && (
+                <button
+                  className="map-preview-link"
+                  onClick={() => onGoToStepRef.current?.(preview.createdAt)}
+                >
+                  {t('map.previewCreatedAt', { index: preview.createdAt })}
+                </button>
+              )}
+              <button
+                className="map-preview-link"
+                onClick={() => onGoToStepRef.current?.(preview.deletedAt)}
+              >
+                {t('map.previewDeletedAt', { index: preview.deletedAt })}
+              </button>
+            </div>
+            {preview.content ? (
+              <pre className="map-preview-body">{preview.content}</pre>
+            ) : (
+              <p className="map-preview-empty">
+                {t('map.previewEmpty')}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="map-stats">
@@ -871,9 +932,19 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
           <span className="map-stat-label">{t('map.statWritten')}</span>
           <span className="map-stat-value map-stat-written">{stats.written}</span>
         </div>
-        <div className="map-stat map-stat-cwd" title={cwd}>
+        <div className="map-stat">
+          <span className="map-stat-label">{t('map.statNew')}</span>
+          <span className="map-stat-value map-stat-created">{stats.created}</span>
+        </div>
+        <div className="map-stat">
+          <span className="map-stat-label">{t('map.statDeleted')}</span>
+          <span className="map-stat-value map-stat-deleted">{stats.deleted}</span>
+        </div>
+        <div className="map-stat map-stat-cwd" title={cwdPath || cwd}>
           <span className="map-stat-label">{t('map.statCwd')}</span>
-          <span className="map-stat-value">{truncateMiddle(cwd.split('/').slice(-2).join('/'), 32)}</span>
+          <span className="map-stat-value">
+            {truncateMiddle((cwdPath || cwd).split('/').slice(-2).join('/'), 32)}
+          </span>
         </div>
       </div>
     </div>

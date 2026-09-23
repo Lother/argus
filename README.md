@@ -31,8 +31,14 @@
 - 步驟展開狀態改用穩定識別，多 agent 同時追加步驟時不再跑位
 - 修正長時間監看的檔案描述符洩漏與重掃洪水——大型 workflow 跑數小時後側欄清空、面板凍結的問題已解決
 
+**成本計算**
+- 計價表涵蓋 Fable 5.1、Mythos 5.1、Opus 5.5，並採各模型實際的快取讀取價（Fable 5.1 每百萬 token $0.25、Opus 5.5 $0.20，而非一律 0.1 倍）——長時間 agent 工作的成本大半是快取讀取，這個差距會放大好幾倍
+- 成本分頁新增「計價依據」表，逐一列出每個模型套用的美元單價（輸入／輸出／快取讀取／快取寫入）與該模型的成本；不在計價表的模型會直接列出名稱，並註明以哪個家族牌價估算
+- Claude Code 自己寫入的 `<synthetic>` 訊息（如「No response requested.」、額度上限提示）不再被誤判為無法辨識的模型
+- 金額一律為美元（USD），依 Anthropic API 牌價計算；訂閱方案（Pro／Max）不按 token 計費，對訂閱用戶而言是等值的 API 費用
+
 **其他**
-- 成本分頁涵蓋 sub-agent 花費
+- 成本與上下文分頁可切換「全部／主工作階段／單一代理」，代理眾多（如 Workflow）時改用依 run 分組的下拉選單
 - 步驟列顯示所屬 agent 的類型徽章與 transcript id，可追回 `agent-<id>.jsonl`
 
 ## 截圖
@@ -59,7 +65,7 @@
 到 [Releases](https://github.com/Lother/argus/releases) 下載最新的 `.vsix`：
 
 ```bash
-code --install-extension argus-claude-0.3.6-zh.vsix
+code --install-extension argus-claude-0.3.8-zh.vsix
 ```
 
 打開 VS Code，點活動列的 **Argus** 眼睛圖示，既有的 Claude Code 工作階段會自動出現。
@@ -73,7 +79,7 @@ npm install
 npm run compile
 npm run build:webview
 npx @vscode/vsce package
-code --install-extension argus-claude-0.3.6.vsix
+code --install-extension argus-claude-0.3.8.vsix
 ```
 
 ## 使用方式
@@ -155,7 +161,7 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 | **Flow** | D3-powered dependency graph of file Reads / Writes / Edits across steps |
 | **Context** | Token budget, cache performance, I/O distribution, compaction markers |
 | **Insights** | AI-derived recommendations and pattern observations |
-| **Map** | Birds-eye view of the session topology |
+| **Map** | Every file the session touched, as a tree it plays back step by step — files outside the working directory included, folders it never opened left out, plus the scratch files it created and deleted (click one to read what the transcript kept of it) |
 
 ### Sidebar & filtering
 
