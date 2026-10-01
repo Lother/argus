@@ -420,6 +420,16 @@ const keyOf = stepKey;
 // working — while numbers shift around it.
 const idOf = (step: Step): string => `${step.agentId ?? ''}:${step.index}`;
 
+// Rows rendered at once. Every expand/collapse re-renders the whole list, and
+// at a few thousand rows that is a visible stall (0.3 s at 3,000 rows, 0.7 s
+// at 7,000) — while nobody scrolls back that far. Search and filters still
+// run over every step; the list just grows on demand.
+const STEPS_PAGE_SIZE = 300;
+
+// Running-agent rows shown before the pinned bar scrolls; keep in step with
+// the max-height of `.steps-active-list`.
+const ACTIVE_AGENTS_VISIBLE = 4;
+
 const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, onMarkAgentFinished }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
@@ -432,6 +442,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
   const [sortMode, setSortMode] = useState(defaultSortMode);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
+  const [visibleCount, setVisibleCount] = useState(STEPS_PAGE_SIZE);
 
   // The settings message normally arrives before the session data, so the
   // state above is already correct. If it lands late, adopt it — unless the
@@ -589,13 +600,16 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
     if (highlightStep !== null) {
       const target = steps.find(s => keyOf(s) === highlightStep);
       // Force the step open: drop the flip if it is auto-expanded already,
-      // add one otherwise.
-      setToggledSteps(prev => {
-        const next = new Set(prev);
-        if (target && isAutoExpanded(target)) next.delete(highlightStep);
-        else next.add(highlightStep);
-        return next;
-      });
+      // add one otherwise. Flips are keyed by the stable id, not the number.
+      if (target) {
+        const id = idOf(target);
+        setToggledSteps(prev => {
+          const next = new Set(prev);
+          if (isAutoExpanded(target)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      }
       if (target?.agentId && collapsedAgents.has(target.agentId)) {
         setCollapsedAgents(prev => {
           const next = new Set(prev);
@@ -880,6 +894,27 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
 
   useEffect(() => () => onFilteredCountChange?.(null), [onFilteredCountChange]);
 
+  // A new query starts from the first page again.
+  useEffect(() => {
+    setVisibleCount(STEPS_PAGE_SIZE);
+  }, [searchQuery, toolFilter, statusFilter, sortMode]);
+
+  // A step another tab jumps to must be rendered to be scrolled to, however
+  // far down the list it sits. Runs after the reset above, so it wins.
+  useEffect(() => {
+    if (highlightStep === null) return;
+    const at = filteredSteps.findIndex(s => keyOf(s) === highlightStep);
+    if (at < 0) return;
+    const needed = Math.ceil((at + 1) / STEPS_PAGE_SIZE) * STEPS_PAGE_SIZE;
+    setVisibleCount(v => Math.max(v, needed));
+  }, [highlightStep, filteredSteps]);
+
+  const visibleSteps = useMemo(
+    () => (filteredSteps.length > visibleCount ? filteredSteps.slice(0, visibleCount) : filteredSteps),
+    [filteredSteps, visibleCount]
+  );
+  const hiddenStepCount = filteredSteps.length - visibleSteps.length;
+
   // How long each step took: the gap to whatever happened next.
   //
   // Measured over every step, hidden ones included, so a row reports the same
@@ -1115,6 +1150,15 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
       <div className="steps-scroll">
         {activeAgents.length > 0 && (
           <div className="steps-active-agents">
+            {/* Past a handful of agents the rows scroll inside the bar
+                instead of pushing the step list off screen; the count says
+                how many there are to scroll through. */}
+            {activeAgents.length > ACTIVE_AGENTS_VISIBLE && (
+              <div className="steps-active-head">
+                {t('steps.activeAgentsCount', { count: activeAgents.length })}
+              </div>
+            )}
+            <div className="steps-active-list">
             {activeAgents.map(({ agent, latest }) => {
               const summary = latest ? getStepSummary(latest) : null;
               return (
@@ -1153,10 +1197,11 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
                 </div>
               );
             })}
+            </div>
           </div>
         )}
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
-          {filteredSteps.map((step, i) => {
+          {visibleSteps.map((step, i) => {
             const k = keyOf(step);
             const id = idOf(step);
             const summary = getStepSummary(step);
@@ -1436,6 +1481,26 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
           })}
         </div>
 
+        {hiddenStepCount > 0 && (
+          <div className="steps-show-more">
+            <span className="steps-show-more-hint">
+              {t('steps.windowHint', { shown: visibleSteps.length, total: filteredSteps.length })}
+            </span>
+            <button
+              className="steps-show-more-btn"
+              onClick={() => setVisibleCount(c => c + STEPS_PAGE_SIZE)}
+            >
+              {t('steps.showMore', { count: Math.min(STEPS_PAGE_SIZE, hiddenStepCount) })}
+            </button>
+            <button
+              className="steps-show-more-btn"
+              title={t('steps.showAllTitle')}
+              onClick={() => setVisibleCount(filteredSteps.length)}
+            >
+              {t('steps.showAll', { count: filteredSteps.length })}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

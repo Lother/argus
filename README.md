@@ -29,6 +29,8 @@
 - 正確判定背景 agent 的結束時點（task-notification），被喚醒的 agent 會重新出現
 - **Workflow 支援**：Workflow 派出的 agent（`subagents/workflows/<runId>/`）完整進時間軸、成本統計與置頂狀態列，run 進行中以 journal 即時判定狀態；被中止或續跑的 run 也能正確判定哪些 agent 還在執行
 - 步驟展開狀態改用穩定識別，多 agent 同時追加步驟時不再跑位
+- 長工作階段的步驟清單一次只渲染 300 列（可再顯示更多），展開步驟不再卡頓；搜尋與篩選仍涵蓋全部步驟
+- 執行中的代理很多時，置頂列改為固定高度的捲動區，不會蓋住步驟清單
 - 修正長時間監看的檔案描述符洩漏與重掃洪水——大型 workflow 跑數小時後側欄清空、面板凍結的問題已解決
 
 **成本計算**
@@ -65,7 +67,7 @@
 到 [Releases](https://github.com/Lother/argus/releases) 下載最新的 `.vsix`：
 
 ```bash
-code --install-extension argus-claude-0.3.10-zh.vsix
+code --install-extension argus-claude-0.3.11-zh.vsix
 ```
 
 打開 VS Code，點活動列的 **Argus** 眼睛圖示，既有的 Claude Code 工作階段會自動出現。
@@ -79,7 +81,7 @@ npm install
 npm run compile
 npm run build:webview
 npx @vscode/vsce package
-code --install-extension argus-claude-0.3.10.vsix
+code --install-extension argus-claude-0.3.11.vsix
 ```
 
 ## 使用方式

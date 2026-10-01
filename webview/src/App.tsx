@@ -141,6 +141,13 @@ function App() {
       ? `${stepsFilteredCount}/${timelineSteps.length}`
       : `${timelineSteps.length}`;
 
+  // A jump target is spent once the user moves on. Left set, it would follow
+  // them back to the Steps tab and keep the list grown out to an old step —
+  // thousands of rows, all re-rendered on every expand.
+  useEffect(() => {
+    if (activeTab !== 'steps') setHighlightStep(null);
+  }, [activeTab]);
+
   if (loading) {
     return (
       <div className="loading">
