@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
-import { Step, AnalysisResult } from '../types/session';
+import { Step, AnalysisResult, Subagent } from '../types/session';
 import { t } from '../i18n';
+import InsightTools, { fmtCost, fmtTokens } from './InsightTools';
+import { summarizeThinking } from '../utils/insightTools';
 import './InsightsTab.css';
 
 interface Props {
@@ -9,6 +11,7 @@ interface Props {
   analysis?: AnalysisResult;
   filesRead: string[];
   filesWritten: string[];
+  subagents: Subagent[];
   onGoToStep: (globalIndex: number) => void;
 }
 
@@ -22,7 +25,7 @@ interface Insight {
   affectedSteps?: number[];
 }
 
-const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, onGoToStep }: Props) => {
+const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, subagents, onGoToStep }: Props) => {
   // Findings and main-session steps carry local indices; the timeline navigates
   // by globalIndex, so map one to the other before rendering step badges.
   const toGlobal = useMemo(() => {
@@ -220,8 +223,24 @@ const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, onGo
       }
     }
 
+    // Reasoning share — billed as output, and the part effort settings control.
+    const thinking = summarizeThinking(flatSteps);
+    if (thinking.thinkingTokens > 0 && thinking.outputTokens > 0) {
+      results.push({
+        type: 'info',
+        icon: '🧠',
+        title: t('insights.thinkingTitle', {
+          percent: ((thinking.thinkingTokens / thinking.outputTokens) * 100).toFixed(0),
+        }),
+        description: t('insights.thinkingDesc', {
+          tokens: fmtTokens(thinking.thinkingTokens),
+          cost: fmtCost(thinking.cost),
+        }),
+      });
+    }
+
     return results;
-  }, [steps, analysis, filesRead, filesWritten, toGlobal]);
+  }, [steps, flatSteps, analysis, filesRead, filesWritten, toGlobal]);
 
   const renderInsight = (insight: Insight, index: number) => (
     <div key={index} className={`insight-card ${insight.type}`}>
@@ -265,6 +284,7 @@ const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, onGo
           {insights.map((insight, index) => renderInsight(insight, index))}
         </div>
       )}
+      <InsightTools flatSteps={flatSteps} subagents={subagents} onGoToStep={onGoToStep} />
     </div>
   );
 };

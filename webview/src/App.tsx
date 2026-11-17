@@ -523,6 +523,7 @@ onMarkAgentFinished={markAgentFinished}
             analysis={session.analysis}
             filesRead={session.filesRead}
             filesWritten={session.filesWritten}
+            subagents={session.subagents}
             onGoToStep={goToStep}
           />
         )}
