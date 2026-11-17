@@ -255,6 +255,9 @@ export interface Usage extends CostUsage {
   output_tokens_details?: {
     thinking_tokens?: number;
   };
+  // The transcript froze `output_tokens` mid-stream and the count is sized
+  // from the response's content instead — see `settleOutputTokens`.
+  output_tokens_estimated?: boolean;
 }
 
 export interface SubagentInfo {

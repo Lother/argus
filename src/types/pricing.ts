@@ -33,6 +33,14 @@ export interface ModelPricing {
   // Fast mode (Opus-tier only) bills the same model at a premium rate.
   fastInputPerMillion?: number;
   fastOutputPerMillion?: number;
+  // A model priced by prompt length (Haiku 5.5): above `aboveTokens` of prompt
+  // — fresh input, cache reads and cache writes together — the whole request
+  // bills at these rates, cache rates scaling with the input rate.
+  longPrompt?: {
+    aboveTokens: number;
+    inputPerMillion: number;
+    outputPerMillion: number;
+  };
 }
 
 // Ratios applied to the model's base input rate, unless the model lists its
@@ -42,6 +50,20 @@ export const CACHE_WRITE_5M_RATIO = 1.25;
 export const CACHE_WRITE_1H_RATIO = 2.0;
 
 export const MODEL_PRICES: Record<string, ModelPricing> = {
+  'claude-fable-5-2': {
+    inputPerMillion: 8.0,
+    outputPerMillion: 40.0,
+    cacheReadPerMillion: 0.2,
+    fastInputPerMillion: 16.0,
+    fastOutputPerMillion: 80.0,
+  },
+  'claude-mythos-5-2': {
+    inputPerMillion: 8.0,
+    outputPerMillion: 40.0,
+    cacheReadPerMillion: 0.2,
+    fastInputPerMillion: 16.0,
+    fastOutputPerMillion: 80.0,
+  },
   'claude-fable-5-1': { inputPerMillion: 10.0, outputPerMillion: 50.0, cacheReadPerMillion: 0.25 },
   // Whether Mythos 5.1 shares Fable 5.1's $0.25 cache reads was left open at
   // launch; until it is confirmed it is priced at the standard 0.1x.
@@ -69,9 +91,15 @@ export const MODEL_PRICES: Record<string, ModelPricing> = {
   },
   'claude-opus-4-7': { inputPerMillion: 5.0, outputPerMillion: 25.0 },
   'claude-opus-4-6': { inputPerMillion: 5.0, outputPerMillion: 25.0 },
+  'claude-sonnet-5-5': { inputPerMillion: 2.0, outputPerMillion: 10.0, cacheReadPerMillion: 0.1 },
   'claude-sonnet-5': { inputPerMillion: 2.0, outputPerMillion: 10.0 },
   'claude-sonnet-4-6': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   'claude-sonnet-4-5-20250929': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1,
+    outputPerMillion: 0.5,
+    longPrompt: { aboveTokens: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5 },
+  },
   'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0 },
   'claude-haiku-4-5-20251001': { inputPerMillion: 1.0, outputPerMillion: 5.0 },
 };
@@ -80,10 +108,10 @@ export const MODEL_PRICES: Record<string, ModelPricing> = {
 // the cheapest current member of the family, so a new model is never billed as
 // something from a different tier.
 const FAMILY_FALLBACKS: Array<{ name: string; match: RegExp; pricing: ModelPricing }> = [
-  { name: 'fable', match: /fable|mythos/i, pricing: { inputPerMillion: 10.0, outputPerMillion: 50.0 } },
+  { name: 'fable', match: /fable|mythos/i, pricing: { inputPerMillion: 8.0, outputPerMillion: 40.0 } },
   { name: 'opus', match: /opus/i, pricing: { inputPerMillion: 4.0, outputPerMillion: 20.0 } },
   { name: 'sonnet', match: /sonnet/i, pricing: { inputPerMillion: 2.0, outputPerMillion: 10.0 } },
-  { name: 'haiku', match: /haiku/i, pricing: { inputPerMillion: 1.0, outputPerMillion: 5.0 } },
+  { name: 'haiku', match: /haiku/i, pricing: { inputPerMillion: 0.1, outputPerMillion: 0.5 } },
 ];
 
 const UNKNOWN_MODEL_PRICING: ModelPricing = {
@@ -182,14 +210,20 @@ export function calculateCostBreakdown(
 
   const pricing = getModelPricing(model);
   const isFast = usage.speed === 'fast';
+  const promptTokens =
+    (usage.input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0);
+  const long =
+    pricing.longPrompt && promptTokens > pricing.longPrompt.aboveTokens ? pricing.longPrompt : undefined;
   const inRate =
     isFast && pricing.fastInputPerMillion !== undefined
       ? pricing.fastInputPerMillion
-      : pricing.inputPerMillion;
+      : long?.inputPerMillion ?? pricing.inputPerMillion;
   const outRate =
     isFast && pricing.fastOutputPerMillion !== undefined
       ? pricing.fastOutputPerMillion
-      : pricing.outputPerMillion;
+      : long?.outputPerMillion ?? pricing.outputPerMillion;
 
   // Prefer the per-TTL breakdown; fall back to the flat counter (older
   // transcripts omit `cache_creation`), treating it as 5-minute writes.

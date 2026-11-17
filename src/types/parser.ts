@@ -188,7 +188,9 @@ export interface AssistantMessage {
   type: string;
   role: string;
   content: ContentBlock[];
-  stop_reason?: string;
+  // `null` on every event of a response still streaming when it was written —
+  // and then its usage is a mid-stream snapshot. See `settleOutputTokens`.
+  stop_reason?: string | null;
   usage?: UsageInfo;
 }
 
@@ -223,6 +225,7 @@ export interface UsageInfo {
   output_tokens_details?: {
     thinking_tokens?: number;
   };
+  output_tokens_estimated?: boolean;
 }
 
 export interface ProgressData {

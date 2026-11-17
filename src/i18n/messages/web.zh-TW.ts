@@ -125,6 +125,9 @@ export const webZhTW: Messages = {
   'agentFilter.pickAgent': '選擇單一代理…（{count}）',
   'agentFilter.workflowRun': 'Workflow {id}（{count}）',
   'cost.estimatedNoteModels': '估算值 —— 無法辨識的模型：{models}',
+  'cost.estimatedOutputNote': '{count} 個回應的輸出為估算值（${cost}）',
+  'cost.estimatedOutputTitle':
+    '逐字稿記錄這些回應的輸出 token 時，串流才剛開始，所以只有幾個 token，跟實際寫了多少無關；大多發生在子代理。這裡改依回應實際寫出的內容推算（含平均的推理量），所以是概略值。',
   'cost.pricingTitle': '計價依據',
   'cost.pricingUnit': '單位：美元／每百萬 token（Anthropic API 牌價）',
   'cost.pricingModel': '模型',

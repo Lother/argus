@@ -130,6 +130,9 @@ export const webEn: Messages = {
   'agentFilter.pickAgent': 'One agent… ({count})',
   'agentFilter.workflowRun': 'Workflow {id} ({count})',
   'cost.estimatedNoteModels': 'estimated — unrecognised model: {models}',
+  'cost.estimatedOutputNote': 'output of {count} responses estimated (${cost})',
+  'cost.estimatedOutputTitle':
+    "The transcript recorded these responses' output count when they had just started streaming — a few tokens, whatever they went on to write. It happens mostly in sub-agents. Their output is sized from what they visibly wrote, reasoning included on average, so the figure is approximate.",
   'cost.pricingTitle': 'Pricing used',
   'cost.pricingUnit': 'US dollars per million tokens, at Anthropic API list prices',
   'cost.pricingModel': 'Model',

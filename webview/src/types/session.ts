@@ -113,6 +113,8 @@ export interface TokenUsage {
   output_tokens_details?: {
     thinking_tokens?: number;
   };
+  // `output_tokens` is an estimate: the transcript recorded it mid-stream.
+  output_tokens_estimated?: boolean;
   speed?: string;
 }
 

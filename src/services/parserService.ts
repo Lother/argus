@@ -15,6 +15,7 @@ import {
   isSystemStep,
 } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
+import { roughOutputOf, settleOutputTokens } from '../types/usage';
 
 /**
  * Wrappers the harness injects into a user turn — IDE state, hook output,
@@ -2094,21 +2095,37 @@ export class ParserService {
    * first block and repeat unchanged, so taking the whole last object rather
    * than merging field by field loses nothing.
    *
+   * Sub-agent transcripts never write that last event: every event of most
+   * of their responses has `stop_reason: null` and the count the stream
+   * opened with. Those get an output count sized from the response's content
+   * (`settleOutputTokens`), marked `output_tokens_estimated`.
+   *
    * Requires a pass of its own because the last event of a message is only
    * knowable after the walk has passed it.
    */
   private findFinalUsage(events: RawEvent[]): Map<string, any> {
     const final = new Map<string, any>();
+    const written = new Map<string, number>();
+    const snapshot = new Map<string, boolean>();
 
     for (const event of events) {
-      if (event.type !== 'assistant' || !event.message?.usage) {
+      if (event.type !== 'assistant' || !event.message) {
         continue;
       }
       const id = event.message.id ?? '';
       if (id === '') {
         continue;
       }
+      written.set(id, (written.get(id) ?? 0) + roughOutputOf(event.message.content));
+      if (!event.message.usage) {
+        continue;
+      }
       final.set(id, event.message.usage);
+      snapshot.set(id, event.message.stop_reason === null);
+    }
+
+    for (const [id, usage] of final) {
+      final.set(id, settleOutputTokens(usage, written.get(id) ?? 0, snapshot.get(id) ?? false));
     }
 
     return final;

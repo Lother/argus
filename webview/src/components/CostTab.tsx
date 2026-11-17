@@ -122,12 +122,20 @@ const CostTab = ({ steps, subagents, analysis, onGoToStep }: Props) => {
   // Token cost breakdown. Usage repeats across every step of one response, so
   // each message is counted once — the same rule the parser applies to cost.
   let inputCost = 0, outputCost = 0, cacheReadCost = 0, cacheCreateCost = 0;
+  // Responses whose output count the transcript froze mid-stream, and what
+  // their (estimated) output came to — see `settleOutputTokens`.
+  let estimatedOutputs = 0;
+  let estimatedOutputCost = 0;
   oncePerResponse(filteredSteps).forEach(step => {
     const b = calculateCostBreakdown(step.usage, step.model ?? '');
     inputCost += b.input;
     outputCost += b.output;
     cacheReadCost += b.cacheRead;
     cacheCreateCost += b.cacheWrite;
+    if (step.usage?.output_tokens_estimated) {
+      estimatedOutputs++;
+      estimatedOutputCost += b.output;
+    }
   });
 
   // Models with no entry in the price table, named so the "estimated" mark
@@ -275,12 +283,20 @@ const CostTab = ({ steps, subagents, analysis, onGoToStep }: Props) => {
         <div className="cost-card total">
           <div className="cost-label">{t('cost.cost')}</div>
           <div className="cost-value">
-            {hasEstimatedCosts && <span className="cost-approx">≈</span>}
+            {(hasEstimatedCosts || estimatedOutputs > 0) && <span className="cost-approx">≈</span>}
             ${totalCost.toFixed(4)}
           </div>
           {hasEstimatedCosts && (
             <div className="cost-note" title={t('cost.estimatedTitle')}>
               {t('cost.estimatedNoteModels', { models: estimatedModels.join(', ') })}
+            </div>
+          )}
+          {estimatedOutputs > 0 && (
+            <div className="cost-note" title={t('cost.estimatedOutputTitle')}>
+              {t('cost.estimatedOutputNote', {
+                count: estimatedOutputs,
+                cost: estimatedOutputCost.toFixed(2),
+              })}
             </div>
           )}
         </div>

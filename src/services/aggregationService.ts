@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as readline from 'readline';
 import { DiscoveryService } from './discoveryService';
 import { calculateCost, Usage } from '../types/models';
+import { roughOutputOf, settleOutputTokens } from '../types/usage';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 
 export interface PerSessionAggregate {
@@ -72,8 +73,8 @@ export interface WorkspaceAggregate {
 }
 
 interface FileCacheEntry {
-  mtimeMs: number;
-  size: number;
+  /** (mtime, size) of the session file and each sub-agent transcript. */
+  signature: string;
   agg: PerSessionAggregate;
 }
 
@@ -96,7 +97,8 @@ function isoLocalDate(ms: number): string {
 /**
  * Aggregates token usage and cost across every Claude Code session JSONL on
  * disk. Streams each line so we don't load full transcripts into memory.
- * Caches per-file results by (mtime, size) so repeat opens are fast.
+ * Caches per-session results by the (mtime, size) of its files so repeat
+ * opens are fast.
  */
 export class AggregationService {
   private _fileCache = new Map<string, FileCacheEntry>();
@@ -104,8 +106,13 @@ export class AggregationService {
   constructor(private readonly _discovery: DiscoveryService) {}
 
   /**
-   * Parse a single JSONL and produce a session-level aggregate. Uses the
-   * cache if the file's (mtime, size) is unchanged from last parse.
+   * Parse a session's JSONL — and its sub-agents' transcripts — into a
+   * session-level aggregate. Uses the cache while none of those files changed.
+   *
+   * Priced the way the session viewer prices it (`ParserService`): once per
+   * API response, from the response's last event, with an output count the
+   * transcript froze mid-stream sized from the response's content instead.
+   * Summing every event would charge a response once per content block.
    */
   async aggregateFile(filePath: string): Promise<PerSessionAggregate | null> {
     let stat: fs.Stats;
@@ -114,8 +121,15 @@ export class AggregationService {
     } catch {
       return null;
     }
+    const agentFiles = await this._subagentFiles(filePath);
+    const agentStats = await Promise.all(
+      agentFiles.map(f => fs.promises.stat(f).catch(() => null))
+    );
+    const signature = [stat, ...agentStats]
+      .map(s => (s ? `${s.mtimeMs}:${s.size}` : '-'))
+      .join('|');
     const cached = this._fileCache.get(filePath);
-    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    if (cached && cached.signature === signature) {
       return cached.agg;
     }
 
@@ -125,59 +139,111 @@ export class AggregationService {
     let model = 'unknown';
     let firstTimestamp = 0;
     let lastTimestamp = 0;
+
+    interface ResponseEntry {
+      usage: any;
+      model: string;
+      written: number;
+      snapshot: boolean;
+    }
+    const responses = new Map<string, ResponseEntry>();
+    // Responses with no id cannot be grouped; each event counts on its own.
+    const loose: ResponseEntry[] = [];
+
+    const scan = async (file: string, isMain: boolean) => {
+      const fileStream = fs.createReadStream(file);
+      const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+      try {
+        for await (const line of rl) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let evt: any;
+          try {
+            evt = JSON.parse(trimmed);
+          } catch {
+            continue;
+          }
+          const ts = evt.timestamp ? Date.parse(evt.timestamp) : 0;
+          if (ts) {
+            if (!firstTimestamp || ts < firstTimestamp) firstTimestamp = ts;
+            if (ts > lastTimestamp) lastTimestamp = ts;
+          }
+          if (!cwd && typeof evt.cwd === 'string' && evt.cwd) {
+            cwd = evt.cwd;
+          }
+          const msg = evt.message;
+          // Claude Code inserts placeholder assistant turns with model "<synthetic>";
+          // they carry no billable usage and would otherwise be costed at the
+          // fallback price. ParserService skips them the same way.
+          if (msg?.model === '<synthetic>') continue;
+          // The primary model is the session's own, not whatever its agents ran.
+          if (isMain && msg?.model && typeof msg.model === 'string') {
+            model = msg.model;
+          }
+          const usage = msg?.usage;
+          if (!usage || typeof usage !== 'object') continue;
+          const id = typeof msg.id === 'string' ? msg.id : '';
+          const written = roughOutputOf(msg.content);
+          const entryModel = msg.model || model;
+          const snapshot = msg.stop_reason === null;
+          if (!id) {
+            loose.push({ usage, model: entryModel, written, snapshot });
+            continue;
+          }
+          const entry = responses.get(id);
+          if (entry) {
+            entry.usage = usage;
+            entry.model = entryModel;
+            entry.written += written;
+            entry.snapshot = snapshot;
+          } else {
+            responses.set(id, { usage, model: entryModel, written, snapshot });
+          }
+        }
+      } finally {
+        rl.close();
+        fileStream.destroy();
+      }
+    };
+
+    try {
+      await scan(filePath, true);
+    } catch {
+      return null;
+    }
+    for (const file of agentFiles) {
+      try {
+        await scan(file, false);
+      } catch {
+        // An agent transcript that vanished mid-scan just goes uncounted.
+      }
+    }
+
+    if (!firstTimestamp && !lastTimestamp) return null;
+
     let inputTokens = 0;
     let outputTokens = 0;
     let cacheReadTokens = 0;
     let cacheCreateTokens = 0;
     let totalCost = 0;
-
-    const fileStream = fs.createReadStream(filePath);
-    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let evt: any;
-      try {
-        evt = JSON.parse(trimmed);
-      } catch {
-        continue;
-      }
-      const ts = evt.timestamp ? Date.parse(evt.timestamp) : 0;
-      if (ts) {
-        if (!firstTimestamp || ts < firstTimestamp) firstTimestamp = ts;
-        if (ts > lastTimestamp) lastTimestamp = ts;
-      }
-      // Anthropic API response objects in Claude Code JSONL have
-      // message.model + message.usage on assistant responses.
-      if (!cwd && typeof evt.cwd === 'string' && evt.cwd) {
-        cwd = evt.cwd;
-      }
-      const msg = evt.message;
-      // Claude Code inserts placeholder assistant turns with model "<synthetic>";
-      // they carry no billable usage and would otherwise be costed at the
-      // fallback price. ParserService skips them the same way.
-      if (msg?.model === '<synthetic>') continue;
-      const usage = msg?.usage;
-      if (msg?.model && typeof msg.model === 'string') {
-        model = msg.model;
-      }
-      if (usage && typeof usage === 'object') {
-        const u: Usage = {
-          input_tokens: usage.input_tokens || 0,
-          output_tokens: usage.output_tokens || 0,
-          cache_read_input_tokens: usage.cache_read_input_tokens || 0,
-          cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-        };
-        inputTokens += u.input_tokens;
-        outputTokens += u.output_tokens;
-        cacheReadTokens += u.cache_read_input_tokens;
-        cacheCreateTokens += u.cache_creation_input_tokens;
-        totalCost += calculateCost(u, msg.model || model);
-      }
+    for (const r of [...responses.values(), ...loose]) {
+      const u = settleOutputTokens(
+        {
+          ...r.usage,
+          input_tokens: r.usage.input_tokens || 0,
+          output_tokens: r.usage.output_tokens || 0,
+          cache_read_input_tokens: r.usage.cache_read_input_tokens || 0,
+          cache_creation_input_tokens: r.usage.cache_creation_input_tokens || 0,
+        } as Usage,
+        r.written,
+        r.snapshot
+      );
+      inputTokens += u.input_tokens;
+      outputTokens += u.output_tokens;
+      cacheReadTokens += u.cache_read_input_tokens;
+      cacheCreateTokens += u.cache_creation_input_tokens;
+      totalCost += calculateCost(u, r.model);
     }
-
-    if (!firstTimestamp && !lastTimestamp) return null;
 
     const agg: PerSessionAggregate = {
       sessionId,
@@ -193,8 +259,41 @@ export class AggregationService {
       cacheCreateTokens,
       totalCost,
     };
-    this._fileCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, agg });
+    this._fileCache.set(filePath, { signature, agg });
     return agg;
+  }
+
+  /**
+   * A session's sub-agent transcripts: `<slug>/<sessionId>/subagents/*.jsonl`,
+   * plus the agents a Workflow run launched, one folder per run under
+   * `subagents/workflows/<runId>/` (see `ParserService.parseSubagents`). The
+   * session's own file holds none of their usage, so the session is not whole
+   * without them.
+   */
+  private async _subagentFiles(filePath: string): Promise<string[]> {
+    const dir = path.join(filePath.replace(/\.jsonl$/, ''), 'subagents');
+    const jsonlIn = async (d: string): Promise<string[]> => {
+      try {
+        const entries = await fs.promises.readdir(d, { withFileTypes: true });
+        return entries
+          .filter(e => e.isFile() && e.name.endsWith('.jsonl'))
+          .map(e => path.join(d, e.name));
+      } catch {
+        return [];
+      }
+    };
+    const files = await jsonlIn(dir);
+    const wfRoot = path.join(dir, 'workflows');
+    let runs: fs.Dirent[] = [];
+    try {
+      runs = await fs.promises.readdir(wfRoot, { withFileTypes: true });
+    } catch {
+      // No workflow ran in this session.
+    }
+    for (const run of runs) {
+      if (run.isDirectory()) files.push(...(await jsonlIn(path.join(wfRoot, run.name))));
+    }
+    return files.sort();
   }
 
   /**
@@ -333,8 +432,8 @@ export class AggregationService {
   private async _walkJsonl(root: string): Promise<string[]> {
     const out: string[] = [];
     // Layout is ~/.claude/projects/<project-slug>/<sessionId>.jsonl. Sub-agent
-    // transcripts live deeper (<slug>/<sessionId>/subagents/*.jsonl) and are
-    // already accounted for by their parent session, so only descend one level.
+    // transcripts live deeper (<slug>/<sessionId>/subagents/*.jsonl); they are
+    // folded into their session by `aggregateFile`, so only descend one level.
     let slugs: fs.Dirent[];
     try {
       slugs = await fs.promises.readdir(root, { withFileTypes: true });
